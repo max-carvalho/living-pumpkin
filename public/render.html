@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Citrouille - rendu</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body { display: grid; place-items: center; }
+  canvas { display: block; }
+  #bar { position: fixed; top: 8px; left: 8px; display: flex; gap: 8px; align-items: center; font: 14px system-ui, sans-serif; color: #c9b9a8; opacity: 0.85; }
+  #bar button { background: #231a14; color: #ffb347; border: 1px solid #4a3626; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+  #dot { width: 10px; height: 10px; border-radius: 50%; background: #b3261e; }
+  #dot.ok { background: #3ddc84; }
+  body.clean #bar { display: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="bar">
+  <span id="dot" title="Connexion au serveur"></span>
+  <button id="toggle">Mode : LED</button>
+  <button id="full">Plein écran</button>
+  <button id="hide">Masquer (touche H)</button>
+</div>
+
+<script src="/shared/face.js"></script>
+<script src="/matrix.js"></script>
+<script src="/net.js"></script>
+<script>
+  var canvas = document.getElementById('c');
+  var view = MatrixView(canvas);
+  var toggle = document.getElementById('toggle');
+
+  function resize() {
+    var s = Math.floor(Math.min(innerWidth, innerHeight));
+    canvas.width = s; canvas.height = s;
+    view.draw();
+  }
+  addEventListener('resize', resize);
+
+  function setMode(m) {
+    view.setMode(m);
+    toggle.textContent = 'Mode : ' + (m === 'pumpkin' ? 'citrouille' : 'LED');
+  }
+  toggle.onclick = function () { setMode(view.getMode() === 'led' ? 'pumpkin' : 'led'); };
+  document.getElementById('full').onclick = function () { document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); };
+  document.getElementById('hide').onclick = function () { document.body.classList.add('clean'); };
+  addEventListener('keydown', function (e) {
+    if (e.key === 'h' || e.key === 'H') document.body.classList.toggle('clean');
+    if (e.key === 'p' || e.key === 'P') toggle.click();
+  });
+
+  resize();
+  setMode(new URLSearchParams(location.search).get('mode') === 'pumpkin' ? 'pumpkin' : 'led');
+
+  connect('render', {
+    onStatus: function (ok) { document.getElementById('dot').className = ok ? 'ok' : ''; },
+    onMessage: function (msg) {
+      if (msg.type === 'state') view.draw(Face.render(msg.state));
+    }
+  });
+</script>
+</body>
+</html>

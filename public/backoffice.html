@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Citrouille - backoffice</title>
+<style>
+  :root { --bg: #0d0907; --card: #1a130e; --line: #3a2a1d; --text: #f3e6d8; --muted: #a8957f; --accent: #ff9a1f; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.4 system-ui, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  h1 { margin: 0; font-size: 20px; color: var(--accent); }
+  h2 { margin: 0 0 10px; font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+  #status { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  #dot { width: 10px; height: 10px; border-radius: 50%; background: #b3261e; }
+  #dot.ok { background: #3ddc84; }
+  #preview { display: block; width: 100%; max-width: 320px; aspect-ratio: 1; margin: 0 auto; border-radius: 10px; }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  button { font: inherit; color: var(--text); background: #2a1e15; border: 1px solid var(--line); border-radius: 10px; padding: 12px 8px; cursor: pointer; }
+  button.on { background: var(--accent); color: #1a0f05; border-color: var(--accent); font-weight: 600; }
+  .presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .slider { display: grid; grid-template-columns: 110px 1fr 40px; align-items: center; gap: 8px; margin: 6px 0; font-size: 14px; }
+  .slider output { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  label.check { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+  label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
+  #video { display: none; width: 160px; border-radius: 8px; transform: scaleX(-1); margin-top: 8px; }
+  #msg { color: #ffb4a8; font-size: 14px; min-height: 1.2em; margin: 4px 0 0; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>🎃 Backoffice</h1>
+    <div id="status"><span id="dot"></span><span id="statusText">Connexion…</span></div>
+  </header>
+
+  <section>
+    <h2>Aperçu</h2>
+    <canvas id="preview" width="320" height="320"></canvas>
+    <p class="hint" id="renderers" style="text-align:center;margin-top:8px"></p>
+  </section>
+
+  <section>
+    <h2>Mode</h2>
+    <div class="seg">
+      <button id="modeIdle">Veille auto</button>
+      <button id="modeLive">Contrôle manuel</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Capteurs</h2>
+    <label class="check"><input type="checkbox" id="trackFace"> Suivi du visage (caméra)</label>
+    <video id="video" playsinline muted></video>
+    <label class="check"><input type="checkbox" id="trackMic"> Bouche selon le volume du micro</label>
+    <div id="headBox" style="margin-top:6px">
+      <button id="calib" style="width:100%">Calibrer : tête droite, bouche fermée et détendue</button>
+      <div class="slider"><span>Amplitude bouche</span><input type="range" id="gainMouth" min="0.5" max="3" step="0.05"><output id="gainMouthV"></output></div>
+      <div class="slider"><span>Sensibilité tête</span><input type="range" id="gainHead" min="0.5" max="3" step="0.05"><output id="gainHeadV"></output></div>
+      <label class="check"><input type="checkbox" id="invYaw"> Inverser regard gauche/droite</label>
+      <label class="check"><input type="checkbox" id="invPitch"> Inverser regard haut/bas</label>
+    </div>
+    <p class="hint" id="diagnostic" style="margin-top:6px"></p>
+    <p id="msg"></p>
+    <p class="hint">Le suivi du visage a priorité sur le micro pour la bouche.</p>
+  </section>
+
+  <section>
+    <h2>Positions prédéfinies</h2>
+    <div class="presets" id="presets"></div>
+  </section>
+
+  <section>
+    <h2>Réglages</h2>
+    <div id="sliders"></div>
+  </section>
+</main>
+
+<script src="/shared/face.js"></script>
+<script src="/matrix.js"></script>
+<script src="/net.js"></script>
+<script>
+  var LABELS = {
+    jaw: 'Bouche ouverte', mouthW: 'Largeur bouche', mouthX: 'Bouche ←→', smile: 'Coins bouche', skew: 'Sourire de travers',
+    blinkL: 'Paupière gauche', blinkR: 'Paupière droite', squintL: 'Œil plissé gauche', squintR: 'Œil plissé droit', wide: 'Yeux écarquillés',
+    browL: 'Sourcil gauche', browR: 'Sourcil droit', tiltL: 'Incliné gauche (colère ↔ tristesse)', tiltR: 'Incliné droit (colère ↔ tristesse)',
+    lookX: 'Regard ←→', lookY: 'Regard ↑↓'
+  };
+  var PRESETS = {
+    'Fermée':       { jaw: 0, smile: 0 },
+    'AAAH !':       { jaw: 1, mouthW: 0.1, smile: 0, browL: 1, browR: 1, wide: 0.6 },
+    'OH':           { jaw: 0.7, mouthW: -0.6, smile: 0 },
+    'I (étirée)':   { jaw: 0.1, mouthW: 1, smile: 0.6 },
+    'Content':      { jaw: 0.2, mouthW: 0.8, smile: 1, squintL: 0.8, squintR: 0.8, browL: 0.3, browR: 0.3 },
+    'Surpris':      { jaw: 0.8, mouthW: -0.4, smile: 0, wide: 1, browL: 1, browR: 1 },
+    'Colère':       { smile: -0.7, squintL: 0.3, squintR: 0.3, browL: -0.6, browR: -0.6, tiltL: -1, tiltR: -1 },
+    'Triste':       { smile: -0.6, browL: 0.3, browR: 0.3, tiltL: 1, tiltR: 1 },
+    'Méfiant':      { smile: 0.1, browL: 1, browR: -0.5, tiltR: -0.8, squintR: 0.6 },
+    'Clin d\u2019œil': { smile: 0.8, blinkR: 1, browL: 1, squintL: 0.5 },
+    'Regard ←':     { lookX: -1 },
+    'Regard →':     { lookX: 1 },
+    'Regard ↑':     { lookY: -1 },
+    'Regard ↓':     { lookY: 1 }
+  };
+
+  var state = Face.normalize({});   // ce que le backoffice veut envoyer
+  var mode = 'idle';
+  var dirty = false;
+  var view = MatrixView(document.getElementById('preview'));
+  var $ = function (id) { return document.getElementById(id); };
+
+  // --- Réseau -----------------------------------------------------------------
+  var net = connect('control', {
+    onStatus: function (ok) {
+      $('dot').className = ok ? 'ok' : '';
+      $('statusText').textContent = ok ? 'Connecté' : 'Déconnecté';
+      if (ok) net.send({ type: 'mode', mode: mode });
+    },
+    onMessage: function (msg) {
+      if (msg.type === 'state') view.draw(Face.render(msg.state));
+      if (msg.type === 'info') {
+        $('renderers').textContent = msg.renderers + ' écran(s) de rendu connecté(s)';
+      }
+    }
+  });
+
+  function setMode(m) {
+    mode = m;
+    $('modeIdle').className = m === 'idle' ? 'on' : '';
+    $('modeLive').className = m === 'live' ? 'on' : '';
+    net.send({ type: 'mode', mode: m });
+    if (m === 'live') dirty = true;
+  }
+  $('modeIdle').onclick = function () { setMode('idle'); };
+  $('modeLive').onclick = function () { setMode('live'); };
+
+  // --- Curseurs ---------------------------------------------------------------
+  var sliderEls = {};
+  Object.keys(LABELS).forEach(function (key) {
+    var r = Face.RANGES[key];
+    var row = document.createElement('div');
+    row.className = 'slider';
+    row.innerHTML = '<span>' + LABELS[key] + '</span><input type="range" min="' + r[0] + '" max="' + r[1] + '" step="0.01"><output></output>';
+    var input = row.querySelector('input'), out = row.querySelector('output');
+    input.oninput = function () {
+      state[key] = parseFloat(input.value);
+      out.textContent = state[key].toFixed(2);
+      if (mode !== 'live') setMode('live');
+      dirty = true;
+    };
+    sliderEls[key] = { input: input, out: out };
+    $('sliders').appendChild(row);
+  });
+  function syncSliders() {
+    for (var k in sliderEls) {
+      sliderEls[k].input.value = state[k];
+      sliderEls[k].out.textContent = state[k].toFixed(2);
+    }
+  }
+  syncSliders();
+
+  // --- Expressions prédéfinies (transition de 150 ms) ---------------------------
+  var anim = null;
+  Object.keys(PRESETS).forEach(function (name) {
+    var b = document.createElement('button');
+    b.textContent = name;
+    b.onclick = function () {
+      if (mode !== 'live') setMode('live');
+      anim = { from: Object.assign({}, state), to: Face.normalize(PRESETS[name]), t0: performance.now() };
+    };
+    $('presets').appendChild(b);
+  });
+
+  // --- Suivi du visage (MediaPipe, dans le navigateur) ---------------------------
+  var MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+  var MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+  var landmarker = null, faceStream = null, faceOn = false, lastVideoTime = -1;
+
+  function showMsg(t) { $('msg').textContent = t || ''; }
+  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+  function ease(prev, next, k) { return prev + (next - prev) * k; }
+  function secure() {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) return true;
+    showMsg('Caméra/micro indisponibles : la page doit être en HTTPS (ou localhost).');
+    return false;
+  }
+
+  // --- Réglages du suivi (mémorisés dans le navigateur) ---
+  var headRaw = { yaw: 0, pitch: 0 };       // orientation actuelle de la tête, en degrés
+  var cfg = { off: { yaw: 0, pitch: 0 }, invYaw: false, invPitch: false, gainMouth: 1, gainHead: 1 };
+  try { Object.assign(cfg, JSON.parse(localStorage.getItem('citrouille.cfg') || '{}')); } catch (e) { /* stockage indisponible */ }
+  function saveCfg() { try { localStorage.setItem('citrouille.cfg', JSON.stringify(cfg)); } catch (e) { /* ignoré */ } }
+  ['invYaw', 'invPitch'].forEach(function (id) {
+    $(id).checked = !!cfg[id];
+    $(id).onchange = function () { cfg[id] = this.checked; saveCfg(); };
+  });
+  [['gainMouth', 'gainMouthV'], ['gainHead', 'gainHeadV']].forEach(function (p) {
+    var el = $(p[0]), out = $(p[1]);
+    el.value = cfg[p[0]];
+    out.textContent = '×' + Number(cfg[p[0]]).toFixed(2);
+    el.oninput = function () { cfg[p[0]] = parseFloat(el.value); out.textContent = '×' + cfg[p[0]].toFixed(2); saveCfg(); };
+  });
+  $('calib').onclick = function () {
+    if (!faceOn || !lipMeasure) { showMsg('Active d\u2019abord le suivi du visage.'); return; }
+    cfg.off = { yaw: headRaw.yaw, pitch: headRaw.pitch };
+    cfg.cal = { w0: lipMeasure.w, x0: lipMeasure.x, y0: lipMeasure.y };
+    saveCfg();
+    showMsg('Calibré : tête et bouche au neutre.');
+  };
+  function headFromMatrix(m) {
+    var deg = 180 / Math.PI;
+    headRaw.yaw = Math.atan2(m[8], m[10]) * deg;
+    headRaw.pitch = Math.asin(clamp(-m[9], -1, 1)) * deg;
+  }
+
+  // --- Forme réelle des lèvres -------------------------------------------------------------
+  // Contours des lèvres dans le maillage MediaPipe (anneaux fermés).
+  var LIPS_OUTER = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185];
+  var LIPS_INNER = [78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308, 415, 310, 311, 312, 13, 82, 81, 80, 191];
+  var MOUTH_PX = 8.8;       // largeur de la bouche neutre sur la matrice, en pixels
+  var MOUTH_TOP = 9.6;      // ligne du haut de la lèvre supérieure (neutre) sur la matrice
+  var lipMeasure = null;    // dernière mesure de la bouche (pour calibrer)
+  var autoCal = null;       // calibrage provisoire : première image reçue
+  function v3(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+  function dot3(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+  function len3(a) { return Math.sqrt(dot3(a, a)); }
+  function mul3(a, k) { return [a[0] * k, a[1] * k, a[2] * k]; }
+
+  // Les 478 points du visage -> contour des lèvres en pixels de matrice.
+  // Les points sont exprimés dans le repère du visage (joues, front/menton), donc indépendants
+  // de l'inclinaison et de la rotation de la tête, et normalisés par la largeur du visage.
+  function lipsFromLandmarks(lm, vw, vh) {
+    var P = function (i) { return [lm[i].x * vw, lm[i].y * vh, lm[i].z * vw]; };
+    var nose = P(2);
+    var ex = v3(P(454), P(234)), F = len3(ex);
+    if (!(F > 1)) return null;
+    ex = mul3(ex, 1 / F);
+    var ey = v3(P(152), P(10));
+    ey = v3(ey, mul3(ex, dot3(ey, ex)));
+    var ly = len3(ey);
+    if (!(ly > 1e-6)) return null;
+    ey = mul3(ey, 1 / ly);
+    var L = function (i) { var d = v3(P(i), nose); return [dot3(d, ex) / F, dot3(d, ey) / F]; };
+
+    var lc = L(61), rc = L(291);
+    lipMeasure = { w: Math.abs(rc[0] - lc[0]), x: (rc[0] + lc[0]) / 2, y: L(0)[1] };
+    var cal = cfg.cal || autoCal || (autoCal = { w0: lipMeasure.w, x0: lipMeasure.x, y0: lipMeasure.y });
+    var scale = MOUTH_PX / cal.w0;
+
+    var map = function (i) {
+      var p = L(i);
+      var sx = 7.5 - (p[0] - cal.x0) * scale;                       // miroir : sa gauche est à gauche de l'écran
+      var d = (p[1] - cal.y0) * scale * cfg.gainMouth;
+      var sy = MOUTH_TOP + 6 * Math.tanh(d / 6);                    // proportionnel, mais ne sort pas de l'écran
+      return [Math.round(clamp(sx, 0.2, 15.8) * 100) / 100, Math.round(sy * 100) / 100];
+    };
+    return { outer: LIPS_OUTER.map(map), inner: LIPS_INNER.map(map) };
+  }
+
+  // Bouche : suivi fidèle. Courbe douce pour que les petits mouvements de la parole restent visibles.
+  function mouthOpening(raw) { return Math.pow(clamp((raw - 0.02) / 0.42 * cfg.gainMouth, 0, 1), 0.85); }
+
+  // Visage -> état de la citrouille. Bouche, sourcils et paupières copient l'opérateur ;
+  // le regard est « truqué » : il est déduit des mouvements de la tête.
+  function applyBlendshapes(b) {
+    var g = function (n) { return b[n] || 0; };
+    var blink = function (v) { return clamp((v - 0.2) / 0.5, 0, 1); };
+    // Sourcils : hauteur (arc = bout extérieur levé) et inclinaison (bout intérieur levé = triste, baissé = colère).
+    var innerUp = g('browInnerUp');
+    var browHeight = function (outerUp, down) { return clamp(outerUp * 2.2 + innerUp * 0.7 - down * 2.2, -1, 1); };
+    var browTilt = function (outerUp, down) { return clamp(innerUp * 2.4 - down * 2.4 - outerUp * 0.8, -1, 1); };
+    var wide = clamp((g('eyeWideLeft') + g('eyeWideRight')) / 2 * 2.2, 0, 1);
+    var squint = function (v) { return clamp(v * 2, 0, 1); };
+
+    var pucker = g('mouthPucker'), funnel = g('mouthFunnel');
+    var jaw = Math.max(mouthOpening(g('jawOpen')), funnel * 0.5, pucker * 0.35);
+    jaw *= 1 - clamp(g('mouthClose'), 0, 1) * 0.7;
+    var stretch = (g('mouthStretchLeft') + g('mouthStretchRight')) / 2;
+    var smileAvg = (g('mouthSmileLeft') + g('mouthSmileRight')) / 2;
+    var mouthW = clamp(stretch * 1.5 + smileAvg * 1.2 - pucker * 1.6 - funnel * 1.1, -1, 1);
+    var smile = clamp(smileAvg * 2 - (g('mouthFrownLeft') + g('mouthFrownRight')) * 1.5, -1, 1);
+    var skew = clamp((g('mouthSmileRight') - g('mouthSmileLeft')) * 2.5, -1, 1);
+    // L'opérateur se voit en miroir : sa gauche est à gauche de l'écran.
+    var mouthX = clamp((g('mouthRight') - g('mouthLeft')) * 3, -1, 1);
+
+    // Regard = direction de la tête (miroir : tourner à droite -> regarder à droite).
+    var yaw = (headRaw.yaw - cfg.off.yaw) * (cfg.invYaw ? 1 : -1);
+    var pitch = (headRaw.pitch - cfg.off.pitch) * (cfg.invPitch ? -1 : 1);
+
+    var target = {
+      jaw: jaw, mouthW: mouthW, mouthX: mouthX, smile: smile, skew: skew,
+      blinkL: blink(g('eyeBlinkLeft')), blinkR: blink(g('eyeBlinkRight')),
+      browL: browHeight(g('browOuterUpLeft'), g('browDownLeft')), browR: browHeight(g('browOuterUpRight'), g('browDownRight')),
+      tiltL: browTilt(g('browOuterUpLeft'), g('browDownLeft')), tiltR: browTilt(g('browOuterUpRight'), g('browDownRight')),
+      squintL: squint(g('eyeSquintLeft')), squintR: squint(g('eyeSquintRight')), wide: wide,
+      lookX: clamp(yaw / 15 * cfg.gainHead, -1, 1),
+      lookY: clamp(pitch / 12 * cfg.gainHead, -1, 1)
+    };
+    var raw = { jaw: 1, mouthW: 1, mouthX: 1, smile: 1, skew: 1 }; // bouche : aucun lissage ici (l'animateur s'en charge)
+    for (var k in target) state[k] = raw[k] ? target[k] : ease(state[k], target[k], 0.6);
+    $('diagnostic').textContent = 'Visage détecté · jawOpen ' + g('jawOpen').toFixed(2) + ' · regard ' + yaw.toFixed(0) + '° / ' + pitch.toFixed(0) + '°';
+    syncSliders();
+    dirty = true;
+  }
+
+  function faceLoop() {
+    if (!faceOn) return;
+    var video = $('video');
+    if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+      lastVideoTime = video.currentTime;
+      var res = landmarker.detectForVideo(video, performance.now());
+      if (res.faceBlendshapes && res.faceBlendshapes.length) {
+        var b = {};
+        res.faceBlendshapes[0].categories.forEach(function (c) { b[c.categoryName] = c.score; });
+        if (res.facialTransformationMatrixes && res.facialTransformationMatrixes.length) {
+          headFromMatrix(res.facialTransformationMatrixes[0].data);
+        }
+        applyBlendshapes(b);
+        var lm = res.faceLandmarks && res.faceLandmarks[0];
+        var lips = lm ? lipsFromLandmarks(lm, video.videoWidth, video.videoHeight) : null;
+        if (lips) state.lips = lips; else delete state.lips;
+      } else {
+        delete state.lips;
+        $('diagnostic').textContent = 'Aucun visage détecté : place-toi face à la caméra, bien éclairé.';
+      }
+    }
+    requestAnimationFrame(faceLoop);
+  }
+
+  async function startFace() {
+    if (!secure()) { $('trackFace').checked = false; return; }
+    try {
+      showMsg('Chargement du suivi du visage…');
+      faceStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 640, height: 480 }, audio: false });
+      var video = $('video');
+      video.srcObject = faceStream;
+      video.style.display = 'block';
+      await video.play();
+      if (!landmarker) {
+        var vision = await import(MP);
+        var fileset = await vision.FilesetResolver.forVisionTasks(MP + '/wasm');
+        landmarker = await vision.FaceLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: MODEL, delegate: 'GPU' },
+          runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true
+        });
+      }
+      faceOn = true;
+      if (mode !== 'live') setMode('live');
+      showMsg('');
+      faceLoop();
+    } catch (e) {
+      showMsg('Suivi du visage impossible : ' + (e.message || e));
+      stopFace();
+      $('trackFace').checked = false;
+    }
+  }
+  function stopFace() {
+    faceOn = false;
+    delete state.lips;
+    dirty = true;
+    if (faceStream) faceStream.getTracks().forEach(function (t) { t.stop(); });
+    faceStream = null;
+    $('video').style.display = 'none';
+  }
+  $('trackFace').onchange = function () { this.checked ? startFace() : stopFace(); };
+
+  // --- Bouche selon le micro ------------------------------------------------------
+  var micStream = null, analyser = null, micBuf = null, audioCtx = null;
+  async function startMic() {
+    if (!secure()) { $('trackMic').checked = false; return; }
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 1024;
+      audioCtx.createMediaStreamSource(micStream).connect(analyser);
+      micBuf = new Uint8Array(analyser.fftSize);
+      if (mode !== 'live') setMode('live');
+      showMsg('');
+    } catch (e) {
+      showMsg('Micro impossible : ' + (e.message || e));
+      stopMic();
+      $('trackMic').checked = false;
+    }
+  }
+  function stopMic() {
+    if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); });
+    if (audioCtx) audioCtx.close();
+    micStream = analyser = audioCtx = null;
+  }
+  $('trackMic').onchange = function () { this.checked ? startMic() : stopMic(); };
+
+  function micStep() {
+    analyser.getByteTimeDomainData(micBuf);
+    var sum = 0;
+    for (var i = 0; i < micBuf.length; i++) { var v = (micBuf[i] - 128) / 128; sum += v * v; }
+    var level = clamp((Math.sqrt(sum / micBuf.length) - 0.02) * 8, 0, 1);
+    state.jaw = ease(state.jaw, level, level > state.jaw ? 0.7 : 0.25); // attaque rapide, retombée douce
+    sliderEls.jaw.input.value = state.jaw;
+    sliderEls.jaw.out.textContent = state.jaw.toFixed(2);
+    dirty = true;
+  }
+
+  // --- Boucle principale : ~30 envois/s maximum -----------------------------------
+  var lastSend = 0;
+  function tick(now) {
+    if (anim) {
+      var k = clamp((now - anim.t0) / 150, 0, 1);
+      state = Face.lerpState(anim.from, anim.to, k);
+      syncSliders();
+      dirty = true;
+      if (k === 1) anim = null;
+    }
+    if (analyser && !faceOn) micStep();
+    if (dirty && mode === 'live' && now - lastSend >= 33) {
+      net.send({ type: 'state', state: state });
+      lastSend = now;
+      dirty = false;
+    }
+    requestAnimationFrame(tick);
+  }
+  setMode('idle');
+  requestAnimationFrame(tick);
+</script>
+</body>
+</html>

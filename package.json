@@ -1,0 +1,15 @@
+{
+  "name": "citrouille",
+  "version": "0.1.0",
+  "description": "Citrouille qui parle : serveur, page de rendu (matrice LED simulée) et backoffice",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "cert": "node scripts/gen-cert.js"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "ws": "^8.21.3"
+  }
+}
