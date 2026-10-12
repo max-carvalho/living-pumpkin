@@ -50,12 +50,12 @@ Principe : l'analyse du visage se fait sur le téléphone, et seuls quelques nom
 
 | Élément | Option envisagée | Remarque |
 |---|---|---|
-| Ordinateur | Raspberry Pi 4 (2 Go ou plus) | Pi 5 possible, support HUB75 moins éprouvé |
-| Matrice LED | HUB75 64x32 **ou** WS2812 16x16 / 8x32 | À choisir (voir §9) |
-| Caméra | Module caméra Pi ou webcam USB | Grand angle de préférence |
-| Micro | Micro USB ou carte son USB | Placé près d'une ouverture |
-| Enceintes | Petit ampli (PAM8403 ou similaire) + haut-parleurs | Carte son USB conseillée |
-| Alimentation | 5 V, 4 A minimum (selon matrice) | Rallonge extérieure étanche |
+| Ordinateur | **Raspberry Pi 3B+** (possédé, 1 Go de RAM, OS 64 bits) | Raspberry Pi OS Lite 64 bits, sans interface graphique |
+| Matrice LED | **WS2812 16x16** (choisie) | Pilotée par une seule broche de données (3,3 V du Pi -> 5 V : adaptateur de niveau conseillé) |
+| Caméra | **Webcam USB Logitech** (possédée, ancienne) | Une mini caméra analogique composite 5~20 V (VID/GND/5~20V) est aussi possédée mais écartée : elle exigerait un dongle USB de capture |
+| Micro | Micro de la webcam, puis micro USB (possédé) en amélioration | Placé près d'une ouverture |
+| Enceintes | Carte son USB + petit ampli (PAM8403 ou similaire) + haut-parleurs | Carte son USB nécessaire : le Pi n'a pas d'entrée audio, et la sortie jack gêne les LED WS2812 pilotées en PWM |
+| Alimentation | 5 V, 4 A minimum | 256 LED WS2812 peuvent tirer jusqu'à ~15 A en blanc plein : limiter la luminosité dans le logiciel. Rallonge extérieure étanche |
 | Boîtier | Boîtier étanche et ventilé pour le Pi | Protéger de l'humidité et de la chaleur |
 | Réseau | Wi-Fi maison ou point d'accès dédié | Vérifier la portée jusqu'à la porte |
 
@@ -90,10 +90,13 @@ Principe : l'analyse du visage se fait sur le téléphone, et seuls quelques nom
 
 ## 9. Points ouverts
 
-1. Quel modèle de Raspberry Pi possède-t-on déjà ?
-2. Matrice HUB75 (plus lumineuse, plus complexe) ou WS2812 (plus simple, moins définie) ?
-3. Langage du serveur : Python (aiortc) ou Node.js ?
-4. Le téléphone sera-t-il toujours sur le Wi-Fi de la maison, ou faut-il un accès à distance (Tailscale) ?
-5. Vraie citrouille, synthétique, ou les deux ?
-6. Quelles expressions faut-il reproduire en priorité : bouche, yeux, sourcils ?
-7. Budget total visé ?
+Tranchés :
+- Raspberry Pi : un **Pi 3B+** est déjà possédé.
+- Matrice : **WS2812 16x16**.
+- Langage du serveur : **Node.js** (déjà en place, dépendance `ws`). Le streaming WebRTC reste à concevoir (voir AGENTS.md).
+
+Restent ouverts :
+1. Le téléphone sera-t-il toujours sur le Wi-Fi de la maison, ou faut-il un accès à distance (Tailscale) ?
+2. Vraie citrouille, synthétique, ou les deux ?
+3. Quelles expressions faut-il reproduire en priorité : bouche, yeux, sourcils ?
+4. Budget total visé ?

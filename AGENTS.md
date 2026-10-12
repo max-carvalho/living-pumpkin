@@ -18,7 +18,7 @@ Pour Halloween (31 octobre), une citrouille « vivante » devant la maison : un 
 - `npm run cert` : certificat HTTPS auto-signé (`scripts/gen-cert.js`).
 
 ### Pas encore fait
-- **Pilote de la vraie matrice LED** sur le Pi (aucune matrice choisie : le code suppose du 16x16, donc plutôt WS2812 ; HUB75 reste une option, voir cahier §9).
+- **Pilote de la vraie matrice LED** sur le Pi : matrice **WS2812 16x16** (choix arrêté, 256 LED, une broche de données). Reste à écrire le pilote Node qui envoie `Face.render()` aux LED (attention au câblage en serpentin éventuel, à l'adaptateur de niveau 3,3 V -> 5 V et à la limitation de luminosité).
 - **Audio/vidéo via WebRTC** : F1 (vidéo caméra -> téléphone), F2 (micro -> téléphone), F3 (voix opérateur -> enceintes du Pi). Rien n'existe encore côté serveur.
 - Code d'accès à la page (sécurité, cahier §6), service systemd, F8 (animations d'attente poussées), F9 à F12.
 
@@ -29,15 +29,16 @@ Pour Halloween (31 octobre), une citrouille « vivante » devant la maison : un 
 - **Webcam USB Logitech (vieille)** : on utilise sa caméra ET son micro dans un premier temps. Normalement reconnue sans pilote (UVC + USB Audio). À vérifier avec `lsusb`, `v4l2-ctl --list-devices`, `v4l2-ctl -d /dev/video0 --list-formats-ext`, `arecord -l`.
 - **Micro USB** de bonne qualité disponible (secours ou meilleur micro).
 - **Mini caméra analogique** 5~20 V à 3 fils (VID, GND, 5~20V), sortie composite, sans micro : inutilisable directement. Il faudrait un dongle USB de capture composite (puce MS2109 de préférence). Mise de côté, la webcam USB est plus simple.
-- **Enceintes** : il faudra une carte son USB (ou micro-casque USB). La sortie jack du Pi est de toute façon en conflit avec la bibliothèque HUB75 `rpi-rgb-led-matrix`.
-- Alimentation 5 V, boîtier étanche/ventilé, matrice : à acheter/choisir.
+- **Matrice** : WS2812 16x16 (256 LED). Possédée ou à acheter : à confirmer. Alimentation dédiée 5 V (jusqu'à ~15 A en blanc plein, luminosité à limiter), masses communes avec le Pi.
+- **Enceintes** : il faudra une carte son USB (ou micro-casque USB). Piloter des WS2812 en PWM sur le Pi bloque aussi la sortie jack, une raison de plus.
+- Boîtier étanche/ventilé, ampli, haut-parleurs : à acheter/choisir.
 
 ## Prochaines étapes (ordre conseillé)
 
 1. Sur le Pi : cloner le dépôt, installer Node.js (LTS), `npm install`, `npm run cert`, `npm start`, ouvrir `render.html` et `backoffice.html` depuis un autre appareil du réseau pour valider la base.
 2. Vérifier la détection de la webcam (commandes ci-dessus) et tester une capture vidéo + audio.
 3. Ajouter le streaming WebRTC (F1 à F3). Attention : le Pi 3B+ est limité (1 Go) ; envisager ffmpeg/GStreamer (encodeur H.264 matériel du Pi) plutôt qu'une pile WebRTC 100 % Node.
-4. Choisir et brancher la matrice, écrire le pilote qui consomme `Face.render()`.
+4. Brancher la matrice WS2812 16x16, écrire le pilote qui consomme `Face.render()`.
 5. Service systemd, code d'accès, montage dans la citrouille, test en extérieur.
 
 ## Structure du dépôt
