@@ -1,2 +1,6 @@
 certs/
 node_modules/
+server.log
+son.json
+couleur.json
+__pycache__/

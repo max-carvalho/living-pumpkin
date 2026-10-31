@@ -16,17 +16,41 @@
   #status { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
   #dot { width: 10px; height: 10px; border-radius: 50%; background: #b3261e; }
   #dot.ok { background: #3ddc84; }
-  #preview { display: block; width: 100%; max-width: 320px; aspect-ratio: 1; margin: 0 auto; border-radius: 10px; }
+  /* Écrans : webcam du Pi en haut ; caméra du téléphone + aperçu de la citrouille en dessous. Tient dans la hauteur de l'écran. */
+  #stage { display: grid; grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); gap: 8px; height: calc(100vh - 90px); height: calc(100dvh - 90px); min-height: 320px; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) 34%; gap: 8px; min-height: 0; }
+  .screen { position: relative; min-height: 0; overflow: hidden; display: grid; place-items: center; background: #000; border: 1px solid var(--line); border-radius: 12px; }
+  .screen > img, .screen > video, .screen > canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .screen .tag { position: absolute; left: 6px; top: 6px; z-index: 1; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(0, 0, 0, .6); color: var(--text); pointer-events: none; }
+  .placeholder { color: var(--muted); font-size: 13px; text-align: center; padding: 10px; }
+  .placeholder button { margin-top: 8px; padding: 8px 12px; font-size: 13px; }
+  #preview { cursor: pointer; }
+  .screen .corner { position: absolute; right: 6px; bottom: 6px; z-index: 1; padding: 10px 14px; min-height: 40px; font-size: 13px; background: rgba(0, 0, 0, .6); touch-action: manipulation; }
   .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .seg.three { grid-template-columns: 1fr 1fr 1fr; }
+  .screen .badge { position: absolute; right: 6px; bottom: 6px; z-index: 1; font-size: 12px; padding: 4px 8px; border-radius: 999px; background: rgba(0, 0, 0, .6); pointer-events: none; }
+  .screen .badge:empty { display: none; }
   button { font: inherit; color: var(--text); background: #2a1e15; border: 1px solid var(--line); border-radius: 10px; padding: 12px 8px; cursor: pointer; }
   button.on { background: var(--accent); color: #1a0f05; border-color: var(--accent); font-weight: 600; }
   .presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .slider { display: grid; grid-template-columns: 110px 1fr 40px; align-items: center; gap: 8px; margin: 6px 0; font-size: 14px; }
+  .slider { display: grid; grid-template-columns: 110px 1fr 52px; align-items: center; gap: 8px; margin: 6px 0; font-size: 14px; }
   .slider output { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  .icons { margin-top: 8px; }
+  .icons button { padding: 6px; }
+  .icons canvas { width: 40px; height: 40px; image-rendering: pixelated; vertical-align: middle; }
+  /* Fenêtre de choix de la couleur des LED */
+  #colorModal { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .7); }
+  #colorModal[hidden] { display: none; }
+  #colorModal .box { width: 100%; max-width: 360px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+  #colorModal .swatches { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+  #colorModal .swatches button { display: grid; justify-items: center; gap: 6px; padding: 10px 4px; font-size: 13px; }
+  #colorModal .swatches i { width: 36px; height: 36px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .25); }
+  #colorModal .swatches button.on i { border-color: var(--text); box-shadow: 0 0 0 3px var(--accent); }
+  #colorModal .close { width: 100%; }
   input[type=range] { width: 100%; accent-color: var(--accent); }
   label.check { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
   label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
-  #video { display: none; width: 160px; border-radius: 8px; transform: scaleX(-1); margin-top: 8px; }
+  #video { object-fit: cover; transform: scaleX(-1); }
   #msg { color: #ffb4a8; font-size: 14px; min-height: 1.2em; margin: 4px 0 0; }
   .hint { color: var(--muted); font-size: 13px; margin: 0; }
 </style>
@@ -38,28 +62,70 @@
     <div id="status"><span id="dot"></span><span id="statusText">Connexion…</span></div>
   </header>
 
-  <section>
-    <h2>Aperçu</h2>
-    <canvas id="preview" width="320" height="320"></canvas>
-    <p class="hint" id="renderers" style="text-align:center;margin-top:8px"></p>
-  </section>
+  <div id="stage">
+    <div class="screen">
+      <span class="tag">Citrouille (caméra IR)</span>
+      <p class="placeholder" id="piCamMsg">Connexion à la caméra…</p>
+      <img id="piCam" alt="">
+      <button class="corner" id="piSound">🔇 Son</button>
+    </div>
+    <div class="row">
+      <div class="screen">
+        <span class="tag">Toi</span>
+        <div class="placeholder" id="videoOff">Caméra du téléphone éteinte<br>(elle s'allume en mode manuel)</div>
+        <video id="video" playsinline muted hidden></video>
+        <span class="badge" id="voiceTag"></span>
+      </div>
+      <div class="screen">
+        <span class="tag" id="renderers">Rendu</span>
+        <canvas id="preview" width="320" height="320" title="Toucher : LED / citrouille"></canvas>
+      </div>
+    </div>
+  </div>
 
   <section>
     <h2>Mode</h2>
-    <div class="seg">
-      <button id="modeIdle">Veille auto</button>
-      <button id="modeLive">Contrôle manuel</button>
+    <div class="seg three">
+      <button id="modeOff">⚫ Éteint</button>
+      <button id="modeIdle">🎃 Sommeil</button>
+      <button id="modeLive">🎭 Manuel</button>
     </div>
+    <div class="seg three icons">
+      <button data-icon="pierre" title="Pierre"><canvas width="16" height="16"></canvas></button>
+      <button data-icon="feuille" title="Feuille"><canvas width="16" height="16"></canvas></button>
+      <button data-icon="ciseaux" title="Ciseaux"><canvas width="16" height="16"></canvas></button>
+    </div>
+    <div class="seg three icons">
+      <button data-icon="prix" title="2€40"><canvas width="16" height="16"></canvas></button>
+      <button id="colorBtn" title="Couleur des LED"><canvas width="16" height="16"></canvas></button>
+    </div>
+    <p class="hint">Manuel : allume ta caméra (suivi du visage) et ton micro (voix vers la citrouille).<br>Pierre, feuille, ciseaux et blagues : l'image remplace le visage pendant 2 s (la voix continue).</p>
+  </section>
+
+  <section>
+    <h2>Son</h2>
+    <div class="slider"><span>Synchro labiale (retard du visage)</span><input type="range" id="lipsync" min="0" max="500" step="10"><output id="lipsyncV"></output></div>
+    <label class="check"><input type="checkbox" id="musicOn"> Musique d'ambiance (baisse quand tu parles)</label>
+    <div class="slider"><span>Volume de la musique</span><input type="range" id="musicVol" min="0" max="1" step="0.05"><output id="musicVolV"></output></div>
+    <label class="check"><input type="checkbox" id="voiceDebug"> Debug : voix (et visage) retardés de 2 s, pour s'écouter</label>
+    <p class="hint">Si la bouche de la citrouille bouge avant le son, augmente le retard du visage.</p>
+  </section>
+
+  <section>
+    <h2>Matrice LED</h2>
+    <div class="slider"><span>Luminosité</span><input type="range" id="ledBright" min="0.02" max="1" step="0.02"><output id="ledBrightV"></output></div>
+    <label class="check"><input type="checkbox" id="ledTest"> Mire de test (vérifier le câblage)</label>
+    <p class="hint">Mire : ligne du haut, colonne de gauche et flèche vers le haut.</p>
   </section>
 
   <section>
     <h2>Capteurs</h2>
     <label class="check"><input type="checkbox" id="trackFace"> Suivi du visage (caméra)</label>
-    <video id="video" playsinline muted></video>
     <label class="check"><input type="checkbox" id="trackMic"> Bouche selon le volume du micro</label>
     <div id="headBox" style="margin-top:6px">
-      <button id="calib" style="width:100%">Calibrer : tête droite, bouche fermée et détendue</button>
+      <button id="calib" style="width:100%">Calibrer : visage au repos (tête droite, bouche fermée, yeux et sourcils naturels)</button>
       <div class="slider"><span>Amplitude bouche</span><input type="range" id="gainMouth" min="0.5" max="3" step="0.05"><output id="gainMouthV"></output></div>
+      <div class="slider"><span>Sensibilité sourcils</span><input type="range" id="gainBrow" min="0.5" max="3" step="0.05"><output id="gainBrowV"></output></div>
       <div class="slider"><span>Sensibilité tête</span><input type="range" id="gainHead" min="0.5" max="3" step="0.05"><output id="gainHeadV"></output></div>
       <label class="check"><input type="checkbox" id="invYaw"> Inverser regard gauche/droite</label>
       <label class="check"><input type="checkbox" id="invPitch"> Inverser regard haut/bas</label>
@@ -80,6 +146,13 @@
   </section>
 </main>
 
+<div id="colorModal" hidden>
+  <div class="box">
+    <h2>Couleur des LED</h2>
+    <div class="swatches" id="swatches"></div>
+    <button class="close" id="colorClose">Fermer</button>
+  </div>
+</div>
 <script src="/shared/face.js"></script>
 <script src="/matrix.js"></script>
 <script src="/net.js"></script>
@@ -112,31 +185,270 @@
   var dirty = false;
   var view = MatrixView(document.getElementById('preview'));
   var $ = function (id) { return document.getElementById(id); };
+  view.setMode('pumpkin');
+  $('preview').onclick = function () { view.setMode(view.getMode() === 'led' ? 'pumpkin' : 'led'); };
+
+  // --- Caméra IR du Pi (flux MJPEG /cam.mjpg) -----------------------------------------
+  // Le message reste derrière l'image : il disparaît dès que la première image s'affiche.
+  var piCamTimer = null;
+  function piCamConnect() {
+    clearTimeout(piCamTimer);
+    $('piCam').hidden = false;
+    $('piCam').src = '/cam.mjpg?t=' + Date.now();
+  }
+  function piCamClose() {
+    clearTimeout(piCamTimer);
+    $('piCam').removeAttribute('src');
+  }
+  function piCamError() {
+    if (document.hidden) return; // flux coupé volontairement
+    $('piCam').hidden = true;
+    $('piCamMsg').textContent = 'Caméra du Pi indisponible, nouvelle tentative…';
+    piCamTimer = setTimeout(piCamConnect, 3000);
+  }
+  $('piCam').onerror = piCamError;
+  // Page en arrière-plan : on coupe le flux (batterie, Wi-Fi), puis on le reprend au retour.
+  document.addEventListener('visibilitychange', function () { document.hidden ? piCamClose() : piCamConnect(); });
+  piCamConnect();
+
+  // --- Son du micro du Pi (PCM 16 bits brut par WebSocket, voir audio.js) -------------
+  // Le navigateur n'autorise le son qu'après un geste : d'où le bouton.
+  var pa = { on: false, ctx: null, out: null, ws: null, rate: 16000, playAt: 0, timer: null };
+  function paPlay(data) {
+    var ctx = pa.ctx, pcm = new Int16Array(data, 0, data.byteLength >> 1), n = pcm.length, buf;
+    if (!n) return;
+    var now = ctx.currentTime;
+    if (pa.playAt < now + 0.02) pa.playAt = now + 0.08;   // réserve de 80 ms contre les à-coups du Wi-Fi
+    if (pa.playAt > now + 0.4) return;                    // trop de retard accumulé : on saute ce morceau
+    try {
+      buf = ctx.createBuffer(1, n, pa.rate);
+      var ch = buf.getChannelData(0);
+      for (var i = 0; i < n; i++) ch[i] = pcm[i] / 32768;
+    } catch (e) {
+      // Navigateur qui refuse 16 kHz : rééchantillonnage linéaire à la fréquence du contexte.
+      var m = Math.round(n * ctx.sampleRate / pa.rate);
+      buf = ctx.createBuffer(1, m, ctx.sampleRate);
+      var c2 = buf.getChannelData(0);
+      for (var j = 0; j < m; j++) {
+        var x = j * (n - 1) / Math.max(1, m - 1), k = Math.floor(x), f = x - k;
+        c2[j] = (pcm[k] * (1 - f) + pcm[Math.min(n - 1, k + 1)] * f) / 32768;
+      }
+    }
+    var src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(pa.out);
+    src.start(pa.playAt);
+    pa.playAt += buf.duration;
+  }
+  function paConnect() {
+    var ws = pa.ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws?role=audio');
+    ws.binaryType = 'arraybuffer';
+    ws.onmessage = function (e) {
+      if (typeof e.data === 'string') { try { pa.rate = JSON.parse(e.data).rate || 16000; } catch (err) { /* ignoré */ } return; }
+      paPlay(e.data);
+    };
+    ws.onclose = function () { if (pa.on) pa.timer = setTimeout(paConnect, 1000); };
+  }
+  function paSet(on) {
+    pa.on = on;
+    $('piSound').textContent = on ? '🔊 Son' : '🔇 Son';
+    $('piSound').className = 'corner' + (on ? ' on' : '');
+    if (on) {
+      if (!pa.ctx) {
+        pa.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        // Le micro de la webcam est faible : gain, puis compresseur pour ne pas saturer.
+        var gain = pa.ctx.createGain(); gain.gain.value = 3;
+        var comp = pa.ctx.createDynamicsCompressor();
+        gain.connect(comp); comp.connect(pa.ctx.destination);
+        pa.out = gain;
+      }
+      pa.ctx.resume();
+      pa.playAt = 0;
+      paConnect();
+    } else {
+      clearTimeout(pa.timer);
+      if (pa.ws) { pa.ws.onclose = null; pa.ws.close(); pa.ws = null; }
+      if (pa.ctx) pa.ctx.suspend();
+    }
+  }
+  $('piSound').onclick = function () { paSet(!pa.on); };
+
+  // --- Ma voix -> haut-parleur de la citrouille (effet de voix appliqué sur le Pi, voir voice.js) ---
+  // Micro du téléphone, rééchantillonné à 16 kHz, envoyé en PCM 16 bits par morceaux de ~20 ms.
+  // Contexte audio : un seul pour toute la page, créé dès le premier toucher et jamais fermé. Les
+  // navigateurs ne le démarrent que pendant un toucher, et Firefox Android met un temps variable
+  // (parfois plus d'une seconde) à le démarrer : le fermer / recréer le laisse bloqué en pause.
+  // Le micro reste ouvert 60 s après « Voix » coupée : réactiver est alors instantané.
+  var vo = { on: false, busy: false, stream: null, ctx: null, src: null, node: null, ws: null, timer: null,
+             release: null, frames: 0, watch: null, steps: '' };
+  function voCtx() {
+    if (!vo.ctx) vo.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (vo.ctx.state !== 'running') vo.ctx.resume().catch(function () {});
+    return vo.ctx;
+  }
+  // Chaque toucher sur la page crée / relance le contexte (seul moment où c'est autorisé à coup sûr).
+  ['pointerdown', 'touchend', 'click'].forEach(function (ev) {
+    document.addEventListener(ev, function () { voCtx(); }, true);
+  });
+  function voConnect() {
+    var ws = vo.ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws?role=voice');
+    ws.binaryType = 'arraybuffer';
+    // Diagnostic dans server.log : état du son du téléphone 2 s après la connexion.
+    ws.onopen = function () {
+      var f0 = vo.frames;
+      setTimeout(function () {
+        if (ws.readyState !== 1 || !vo.ctx) return;
+        var tr = vo.stream && vo.stream.getAudioTracks()[0];
+        ws.send(JSON.stringify({ ctx: vo.ctx.state, rate: vo.ctx.sampleRate, blocs: vo.frames - f0,
+          micro: tr ? tr.readyState + (tr.muted ? ' (muet)' : '') : 'aucun', etapes: vo.steps, nav: navigator.userAgent }));
+      }, 2000);
+    };
+    ws.onclose = function () { if (vo.on && vo.ws === ws) vo.timer = setTimeout(voConnect, 1000); };
+  }
+  async function voStart() {
+    if (!secure()) return false;
+    var ctx = voCtx();
+    // Firefox Android : si le micro s'ouvre avant que le contexte audio ait démarré, celui-ci peut
+    // mettre très longtemps à démarrer. On attend donc qu'il tourne (3 s au plus) avant le micro.
+    for (var w = 0; w < 30 && ctx.state !== 'running'; w++) await new Promise(function (r) { setTimeout(r, 100); });
+    vo.steps = 'avant micro:' + ctx.state;
+    try {
+      vo.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false
+      });
+    } catch (e) { showMsg('Micro impossible : ' + (e.message || e)); return false; }
+    vo.steps += ' après micro:' + ctx.state;
+    var src = vo.src = ctx.createMediaStreamSource(vo.stream);
+    var node = vo.node = ctx.createScriptProcessor(1024, 1, 1);
+    var step = ctx.sampleRate / 16000, pos = 0, lp = 0, prev = 0;
+    var lpA = 1 - Math.exp(-2 * Math.PI * 6500 / ctx.sampleRate);  // anti-repliement avant 16 kHz
+    var outBuf = [];
+    node.onaudioprocess = function (e) {
+      vo.frames++;
+      var inp = e.inputBuffer.getChannelData(0);
+      for (var i = 0; i < inp.length; i++) {
+        var cur = lp += lpA * (inp[i] - lp);
+        // Rééchantillonnage linéaire vers 16 kHz.
+        while (pos <= 1) {
+          var v = prev + (cur - prev) * pos;
+          outBuf.push(v > 1 ? 32767 : v < -1 ? -32767 : Math.round(v * 32767));
+          pos += step;
+        }
+        pos -= 1;
+        prev = cur;
+      }
+      if (!vo.on || !vo.ws || vo.ws.readyState !== 1) { if (outBuf.length > 3200) outBuf = []; return; }  // pas de vieux son à la reprise
+      if (outBuf.length >= 320) {
+        vo.ws.send(new Int16Array(outBuf).buffer);
+        outBuf = [];
+      }
+    };
+    src.connect(node);
+    var mute = ctx.createGain(); mute.gain.value = 0;               // le nœud doit être relié pour tourner
+    node.connect(mute); mute.connect(ctx.destination);
+    return true;
+  }
+  function voDisconnect() {
+    clearTimeout(vo.timer);
+    if (vo.ws) { var ws = vo.ws; vo.ws = null; ws.close(); }
+  }
+  function voRelease() {   // libère le micro ; le contexte audio, lui, est gardé
+    voDisconnect();
+    if (vo.node) { vo.node.onaudioprocess = null; vo.node.disconnect(); }
+    if (vo.src) vo.src.disconnect();
+    if (vo.stream) vo.stream.getTracks().forEach(function (t) { t.stop(); });
+    vo.stream = vo.src = vo.node = null;
+  }
+  function voShow(text) {   // pastille d'état sur l'image « Toi » (vide quand la voix est coupée)
+    $('voiceTag').textContent = text || (vo.on ? '🎙️ Voix en direct' : '');
+  }
+  // Le bouton dit la vérité : « en direct » seulement si le micro est réellement traité.
+  function voWatch() {
+    var last = vo.frames;
+    clearInterval(vo.watch);
+    vo.watch = setInterval(function () {
+      if (!vo.on) { clearInterval(vo.watch); return; }
+      var flowing = vo.frames !== last;
+      last = vo.frames;
+      voShow(flowing ? null : '⏳ Voix : démarrage…');   // Firefox peut mettre un moment à démarrer le son
+    }, 700);
+  }
+  // Voix allumée / coupée par le mode (manuel = voix en direct). Même démarrage que l'ancien bouton « Voix ».
+  async function voOn() {
+    if (vo.on || vo.busy) return;
+    clearTimeout(vo.release);
+    if (!vo.stream) {
+      vo.busy = true; voShow('⏳ Voix…');     // retour visuel tout de suite
+      var ok = await voStart();
+      vo.busy = false;
+      if (!ok) { voShow(); return; }
+    }
+    if (mode !== 'live') { voShow(); return; }  // mode changé pendant l'ouverture du micro
+    vo.on = true; voConnect(); voShow('⏳ Voix…'); voWatch();
+  }
+  function voOff() {   // coupure immédiate ; le micro est libéré 60 s plus tard
+    clearTimeout(vo.release);
+    vo.on = false; voDisconnect(); voShow();
+    vo.release = setTimeout(function () { if (!vo.on) voRelease(); }, 60000);
+  }
 
   // --- Réseau -----------------------------------------------------------------
   var net = connect('control', {
     onStatus: function (ok) {
       $('dot').className = ok ? 'ok' : '';
       $('statusText').textContent = ok ? 'Connecté' : 'Déconnecté';
-      if (ok) net.send({ type: 'mode', mode: mode });
+      if (ok) {
+        net.send({ type: 'mode', mode: mode });
+        net.send({ type: 'lipsync', ms: cfg.lipsync });
+      }
     },
     onMessage: function (msg) {
-      if (msg.type === 'state') view.draw(Face.render(msg.state));
+      if (msg.type === 'state') view.draw(msg.icon ? Face.icon(msg.icon) : msg.mode === 'off' ? new Uint8Array(Face.W * Face.W * 3) : Face.render(msg.state));
       if (msg.type === 'info') {
-        $('renderers').textContent = msg.renderers + ' écran(s) de rendu connecté(s)';
+        // Réglages de la matrice : le Pi fait foi (ils ne bougent pas pendant qu'on tient le curseur).
+        if (typeof msg.ledBrightness === 'number' && document.activeElement !== $('ledBright')) {
+          $('ledBright').value = msg.ledBrightness;
+          $('ledBrightV').textContent = Math.round(msg.ledBrightness * 100) + ' %';
+        }
+        if (typeof msg.ledTest === 'boolean') $('ledTest').checked = msg.ledTest;
+        if (typeof msg.voiceDebug === 'boolean') $('voiceDebug').checked = msg.voiceDebug;
+        if (msg.color) { Face.setColor(msg.color); showColor(); }   // l'aperçu prend la couleur des LED
+        // Musique : le Pi fait foi aussi.
+        if (msg.music) {
+          $('musicOn').checked = msg.music.on;
+          if (document.activeElement !== $('musicVol')) {
+            $('musicVol').value = msg.music.volume;
+            $('musicVolV').textContent = Math.round(msg.music.volume * 100) + ' %';
+          }
+        }
+        $('renderers').textContent = 'Rendu · ' + msg.renderers + ' écran' + (msg.renderers > 1 ? 's' : '');
       }
     }
   });
 
   function setMode(m) {
     mode = m;
+    $('modeOff').className = m === 'off' ? 'on' : '';
     $('modeIdle').className = m === 'idle' ? 'on' : '';
     $('modeLive').className = m === 'live' ? 'on' : '';
     net.send({ type: 'mode', mode: m });
     if (m === 'live') dirty = true;
   }
-  $('modeIdle').onclick = function () { setMode('idle'); };
-  $('modeLive').onclick = function () { setMode('live'); };
+  // Boutons de mode. Manuel : la voix d'abord (son contexte audio doit naître pendant le clic), puis la
+  // caméra une fois le micro ouvert (deux demandes simultanées se gênent). Éteint / Sommeil : tout est coupé.
+  async function chooseMode(m) {
+    setMode(m);
+    if (m === 'live') {
+      await voOn();
+      if (mode === 'live' && !$('trackFace').checked) { $('trackFace').checked = true; startFace(); }
+    } else {
+      voOff();
+      if ($('trackFace').checked || faceOn) { $('trackFace').checked = false; stopFace(); }
+    }
+  }
+  $('modeOff').onclick = function () { chooseMode('off'); };
+  $('modeIdle').onclick = function () { chooseMode('idle'); };
+  $('modeLive').onclick = function () { chooseMode('live'); };
 
   // --- Curseurs ---------------------------------------------------------------
   var sliderEls = {};
@@ -191,25 +503,105 @@
 
   // --- Réglages du suivi (mémorisés dans le navigateur) ---
   var headRaw = { yaw: 0, pitch: 0 };       // orientation actuelle de la tête, en degrés
-  var cfg = { off: { yaw: 0, pitch: 0 }, invYaw: false, invPitch: false, gainMouth: 1, gainHead: 1 };
+  var lastShapes = null;                    // derniers blendshapes reçus (pour calibrer)
+  var cfg = { off: { yaw: 0, pitch: 0 }, invYaw: false, invPitch: false, gainMouth: 1, gainHead: 1, gainBrow: 1, lipsync: 130 };
   try { Object.assign(cfg, JSON.parse(localStorage.getItem('citrouille.cfg') || '{}')); } catch (e) { /* stockage indisponible */ }
+  ['voiceFx', 'voiceFxSet', 'voiceFxUser', 'voiceOpts', 'voiceStyle'].forEach(function (k) { delete cfg[k]; });   // anciens réglages de voix
+  if (cfg.lipsyncSet !== 130) { cfg.lipsync = 130; cfg.lipsyncSet = 130; }   // nouveau défaut, imposé une fois
   function saveCfg() { try { localStorage.setItem('citrouille.cfg', JSON.stringify(cfg)); } catch (e) { /* ignoré */ } }
   ['invYaw', 'invPitch'].forEach(function (id) {
     $(id).checked = !!cfg[id];
     $(id).onchange = function () { cfg[id] = this.checked; saveCfg(); };
   });
-  [['gainMouth', 'gainMouthV'], ['gainHead', 'gainHeadV']].forEach(function (p) {
+  [['gainMouth', 'gainMouthV'], ['gainBrow', 'gainBrowV'], ['gainHead', 'gainHeadV']].forEach(function (p) {
     var el = $(p[0]), out = $(p[1]);
     el.value = cfg[p[0]];
     out.textContent = '×' + Number(cfg[p[0]]).toFixed(2);
     el.oninput = function () { cfg[p[0]] = parseFloat(el.value); out.textContent = '×' + cfg[p[0]].toFixed(2); saveCfg(); };
   });
+  // Son : retard du visage (synchro labiale), appliqué par le Pi.
+  [['lipsync', function (v) { return v + ' ms'; }, function (v) { net.send({ type: 'lipsync', ms: v }); }]
+  ].forEach(function (p) {
+    var el = $(p[0]), out = $(p[0] + 'V');
+    el.value = cfg[p[0]];
+    out.textContent = p[1](cfg[p[0]]);
+    el.oninput = function () {
+      cfg[p[0]] = parseFloat(el.value);
+      out.textContent = p[1](cfg[p[0]]); saveCfg(); p[2](cfg[p[0]]);
+    };
+  });
+  $('ledBright').oninput = function () {
+    $('ledBrightV').textContent = Math.round(this.value * 100) + ' %';
+    net.send({ type: 'leds', brightness: parseFloat(this.value) });
+  };
+  $('musicOn').onchange = function () { net.send({ type: 'music', on: this.checked }); };
+  $('musicVol').oninput = function () {
+    $('musicVolV').textContent = Math.round(this.value * 100) + ' %';
+    net.send({ type: 'music', volume: parseFloat(this.value) });
+  };
+  $('ledTest').onchange = function () { net.send({ type: 'leds', test: this.checked }); };
+  // Pierre / feuille / ciseaux : le bouton montre l'image elle-même ; un toucher l'affiche 2 s sur la citrouille.
+  var iconBtns = document.querySelectorAll('.icons button[data-icon]');
+  for (var ii = 0; ii < iconBtns.length; ii++) {
+    var ib = iconBtns[ii], img = Face.icon(ib.dataset.icon), cx = ib.firstChild.getContext('2d');
+    var px = cx.createImageData(Face.W, Face.W);
+    for (var pi = 0; pi < Face.W * Face.W; pi++) {
+      // Allumé : orange de l'accent (comme à travers la chair) ; éteint : transparent.
+      px.data[pi * 4] = 255; px.data[pi * 4 + 1] = 140; px.data[pi * 4 + 2] = 30; px.data[pi * 4 + 3] = img[pi * 3] ? 255 : 0;
+    }
+    cx.putImageData(px, 0, 0);
+    ib.onclick = function () { net.send({ type: 'icon', name: this.dataset.icon }); };
+  }
+  // Couleur des LED : bouton arc-en-ciel -> fenêtre de couleurs ; le choix s'applique tout de suite
+  // (matrice, aperçus) et le Pi s'en souvient. À travers la chair, tout tire vers l'orange.
+  var LED_COLORS = [
+    ['Blanc', [255, 255, 255]], ['Orange', [255, 110, 0]], ['Jaune', [255, 200, 0]],
+    ['Rouge', [255, 0, 0]], ['Rose', [255, 40, 140]], ['Violet', [150, 0, 255]],
+    ['Bleu', [0, 60, 255]], ['Cyan', [0, 220, 255]], ['Vert', [0, 255, 40]]
+  ];
+  (function () {
+    // Icône du bouton : disque arc-en-ciel en pixels.
+    var cx = $('colorBtn').firstChild.getContext('2d'), px = cx.createImageData(16, 16);
+    var bands = [[255, 0, 0], [255, 110, 0], [255, 200, 0], [0, 255, 40], [0, 220, 255], [0, 60, 255], [150, 0, 255]];
+    for (var y = 0; y < 16; y++) for (var x = 0; x < 16; x++) {
+      var dx = x - 7.5, dy = y - 7.5;
+      if (dx * dx + dy * dy > 49) continue;
+      var c = bands[Math.min(6, Math.floor((x - 1) / 2))] || bands[0], o = (y * 16 + x) * 4;
+      px.data[o] = c[0]; px.data[o + 1] = c[1]; px.data[o + 2] = c[2]; px.data[o + 3] = 255;
+    }
+    cx.putImageData(px, 0, 0);
+  })();
+  LED_COLORS.forEach(function (c) {
+    var b = document.createElement('button'), dot = document.createElement('i');
+    dot.style.background = 'rgb(' + c[1].join(',') + ')';
+    b.appendChild(dot);
+    b.appendChild(document.createTextNode(c[0]));
+    b.dataset.rgb = c[1].join(',');
+    b.onclick = function () {
+      net.send({ type: 'color', rgb: c[1] });
+      Face.setColor(c[1]); showColor();
+      $('colorModal').hidden = true;
+    };
+    $('swatches').appendChild(b);
+  });
+  function showColor() {
+    var cur = Face.getColor().join(','), bs = $('swatches').children;
+    for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('on', bs[i].dataset.rgb === cur);
+  }
+  $('colorBtn').onclick = function () { showColor(); $('colorModal').hidden = false; };
+  $('colorClose').onclick = function () { $('colorModal').hidden = true; };
+  $('colorModal').onclick = function (e) { if (e.target === this) this.hidden = true; };
+  $('voiceDebug').onchange = function () { net.send({ type: 'voiceDebug', on: this.checked }); };
   $('calib').onclick = function () {
     if (!faceOn || !lipMeasure) { showMsg('Active d\u2019abord le suivi du visage.'); return; }
     cfg.off = { yaw: headRaw.yaw, pitch: headRaw.pitch };
     cfg.cal = { w0: lipMeasure.w, x0: lipMeasure.x, y0: lipMeasure.y };
+    // Visage de repos du comédien (yeux naturellement plissés, sourcils bas...) : ces valeurs
+    // deviennent le zéro des yeux et des sourcils. La bouche n'est pas concernée.
+    cfg.base = {};
+    for (var n in lastShapes || {}) if (/^(eye|brow)/.test(n)) cfg.base[n] = lastShapes[n];
     saveCfg();
-    showMsg('Calibré : tête et bouche au neutre.');
+    showMsg('Calibré : tête, bouche, yeux et sourcils au repos.');
   };
   function headFromMatrix(m) {
     var deg = 180 / Math.PI;
@@ -267,12 +659,18 @@
   // Visage -> état de la citrouille. Bouche, sourcils et paupières copient l'opérateur ;
   // le regard est « truqué » : il est déduit des mouvements de la tête.
   function applyBlendshapes(b) {
-    var g = function (n) { return b[n] || 0; };
+    // Yeux et sourcils : mesurés par rapport au visage de repos du comédien (calibrage).
+    var base = cfg.base || {};
+    var g = function (n) {
+      var v = b[n] || 0, z = base[n] || 0;
+      return z > 0 && z < 0.95 ? clamp((v - z) / (1 - z), 0, 1) : v;
+    };
     var blink = function (v) { return clamp((v - 0.2) / 0.5, 0, 1); };
     // Sourcils : hauteur (arc = bout extérieur levé) et inclinaison (bout intérieur levé = triste, baissé = colère).
-    var innerUp = g('browInnerUp');
-    var browHeight = function (outerUp, down) { return clamp(outerUp * 2.2 + innerUp * 0.7 - down * 2.2, -1, 1); };
-    var browTilt = function (outerUp, down) { return clamp(innerUp * 2.4 - down * 2.4 - outerUp * 0.8, -1, 1); };
+    // Gains relevés le 2026-10-31 (suivi jugé trop faible), réglables avec « Sensibilité sourcils ».
+    var innerUp = g('browInnerUp'), kb = cfg.gainBrow || 1;
+    var browHeight = function (outerUp, down) { return clamp((outerUp * 3.2 + innerUp * 1.0 - down * 3.2) * kb, -1, 1); };
+    var browTilt = function (outerUp, down) { return clamp((innerUp * 3.2 - down * 3.2 - outerUp * 1.0) * kb, -1, 1); };
     var wide = clamp((g('eyeWideLeft') + g('eyeWideRight')) / 2 * 2.2, 0, 1);
     var squint = function (v) { return clamp(v * 2, 0, 1); };
 
@@ -300,6 +698,10 @@
       lookX: clamp(yaw / 15 * cfg.gainHead, -1, 1),
       lookY: clamp(pitch / 12 * cfg.gainHead, -1, 1)
     };
+    // Quand un œil se ferme, MediaPipe croit aussi voir le sourcil descendre : on fige le sourcil
+    // de ce côté pendant le clignement.
+    if (target.blinkL > 0.3) { delete target.browL; delete target.tiltL; }
+    if (target.blinkR > 0.3) { delete target.browR; delete target.tiltR; }
     var raw = { jaw: 1, mouthW: 1, mouthX: 1, smile: 1, skew: 1 }; // bouche : aucun lissage ici (l'animateur s'en charge)
     for (var k in target) state[k] = raw[k] ? target[k] : ease(state[k], target[k], 0.6);
     $('diagnostic').textContent = 'Visage détecté · jawOpen ' + g('jawOpen').toFixed(2) + ' · regard ' + yaw.toFixed(0) + '° / ' + pitch.toFixed(0) + '°';
@@ -307,28 +709,42 @@
     dirty = true;
   }
 
+  var lastFrameAt = 0;
   function faceLoop() {
     if (!faceOn) return;
+    requestAnimationFrame(faceLoop);   // en premier : une erreur plus bas n'arrête pas la boucle
     var video = $('video');
+    // Caméra figée (plus d'image depuis 0,5 s) : on n'envoie pas une bouche figée sur une vieille mesure.
+    if (lastFrameAt && performance.now() - lastFrameAt > 500 && state.lips) {
+      delete state.lips; dirty = true;
+      $('diagnostic').textContent = 'Caméra figée : plus d\u2019image du téléphone.';
+    }
     if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
       lastVideoTime = video.currentTime;
-      var res = landmarker.detectForVideo(video, performance.now());
-      if (res.faceBlendshapes && res.faceBlendshapes.length) {
-        var b = {};
-        res.faceBlendshapes[0].categories.forEach(function (c) { b[c.categoryName] = c.score; });
-        if (res.facialTransformationMatrixes && res.facialTransformationMatrixes.length) {
-          headFromMatrix(res.facialTransformationMatrixes[0].data);
-        }
-        applyBlendshapes(b);
-        var lm = res.faceLandmarks && res.faceLandmarks[0];
-        var lips = lm ? lipsFromLandmarks(lm, video.videoWidth, video.videoHeight) : null;
-        if (lips) state.lips = lips; else delete state.lips;
-      } else {
-        delete state.lips;
-        $('diagnostic').textContent = 'Aucun visage détecté : place-toi face à la caméra, bien éclairé.';
+      lastFrameAt = performance.now();
+      try { faceFrame(video); } catch (e) {
+        delete state.lips; dirty = true;
+        $('diagnostic').textContent = 'Erreur du suivi : ' + (e.message || e);
       }
     }
-    requestAnimationFrame(faceLoop);
+  }
+  function faceFrame(video) {
+    var res = landmarker.detectForVideo(video, performance.now());
+    if (res.faceBlendshapes && res.faceBlendshapes.length) {
+      var b = {};
+      res.faceBlendshapes[0].categories.forEach(function (c) { b[c.categoryName] = c.score; });
+      lastShapes = b;
+      if (res.facialTransformationMatrixes && res.facialTransformationMatrixes.length) {
+        headFromMatrix(res.facialTransformationMatrixes[0].data);
+      }
+      applyBlendshapes(b);
+      var lm = res.faceLandmarks && res.faceLandmarks[0];
+      var lips = lm ? lipsFromLandmarks(lm, video.videoWidth, video.videoHeight) : null;
+      if (lips) state.lips = lips; else delete state.lips;
+    } else {
+      delete state.lips;
+      $('diagnostic').textContent = 'Aucun visage détecté : place-toi face à la caméra, bien éclairé.';
+    }
   }
 
   async function startFace() {
@@ -338,7 +754,8 @@
       faceStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 640, height: 480 }, audio: false });
       var video = $('video');
       video.srcObject = faceStream;
-      video.style.display = 'block';
+      video.hidden = false;
+      $('videoOff').hidden = true;
       await video.play();
       if (!landmarker) {
         var vision = await import(MP);
@@ -348,7 +765,8 @@
           runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true
         });
       }
-      faceOn = true;
+      if (!$('trackFace').checked) { stopFace(); return; }   // mode quitté pendant le chargement
+      faceOn = true; lastFrameAt = 0;
       if (mode !== 'live') setMode('live');
       showMsg('');
       faceLoop();
@@ -364,7 +782,8 @@
     dirty = true;
     if (faceStream) faceStream.getTracks().forEach(function (t) { t.stop(); });
     faceStream = null;
-    $('video').style.display = 'none';
+    $('video').hidden = true;
+    $('videoOff').hidden = false;
   }
   $('trackFace').onchange = function () { this.checked ? startFace() : stopFace(); };
 

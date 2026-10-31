@@ -6,8 +6,9 @@
 //  - la BOUCHE reproduit la forme réelle des lèvres de l'opérateur (contours MediaPipe, champ `lips`),
 //    dessinée en contour vide d'un seul pixel d'épaisseur. Sans contour (curseurs, micro, veille),
 //    elle est reconstruite à partir des paramètres jaw / mouthW / smile... ;
-//  - les YEUX et SOURCILS sont volontairement exagérés (cartoon) : ils regardent là où la tête de
-//    l'opérateur indique, et changent de forme selon les sourcils, les paupières et les joues ;
+//    Seul le bruit de symétrie (< 0,15 px) est corrigé, et l'axe est calé sur la grille de LED ;
+//  - les YEUX sont des triangles de citrouille de forme fixe : ils regardent là où la tête de
+//    l'opérateur indique et se ferment, c'est tout. Les SOURCILS portent les émotions ;
 //  - tout est allumé ou éteint : aucun dégradé.
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -23,14 +24,15 @@
   //  skew     asymétrie du sourire : -1 = coin gauche plus haut .. +1 = coin droit plus haut
   // Yeux (L = œil à gauche de l'écran)
   //  blinkL/R paupière : 0 = ouverte .. 1 = fermée
-  //  squintL/R joue qui remonte : 0 = œil rond .. 1 = œil plissé (sourire sincère)
-  //  wide     yeux écarquillés : 0 .. 1
+  //  squintL/R joue qui remonte : sans effet depuis les yeux en triangle (gardé pour compatibilité)
+  //  wide     yeux écarquillés : 0 .. 1 (fait monter les sourcils)
   //  lookX/Y  regard : -1 = gauche/haut .. +1 = droite/bas
   // Sourcils
   //  browL/R  hauteur : -1 = baissé .. +1 = levé
   //  tiltL/R  inclinaison : -1 = bout intérieur bas (colère) .. +1 = bout intérieur haut (tristesse)
   // Contour réel des lèvres (optionnel) : lips = { outer: [[x, y], ...], inner: [[x, y], ...] }
   //  en coordonnées de la matrice (0..16), polygones fermés ; inner vide = bouche fermée.
+  //  Pour la symétrie légère (symmetrizeNoise), coins aux indices 0 et N/2, le point i ayant pour reflet N/2 - i.
   var DEFAULT_STATE = {
     jaw: 0, mouthW: 0, mouthX: 0, smile: 0.3, skew: 0,
     blinkL: 0, blinkR: 0, squintL: 0, squintR: 0, wide: 0, lookX: 0, lookY: 0,
@@ -44,8 +46,101 @@
   // Les ressorts de l'animateur dépassent un peu leur cible (effet cartoon) : le rendu tolère ce dépassement.
   var SLACK = { browL: 1.3, browR: 1.3, tiltL: 1.3, tiltR: 1.3, lookX: 1.4, lookY: 1.4 };
 
-  // Une couleur par élément, jamais de dégradé.
-  var COLORS = { eye: [255, 215, 100], brow: [200, 95, 10], mouth: [255, 140, 20] };
+  // Blanc pur à pleine puissance pour tout : la chair de la citrouille teinte déjà la lumière en orange.
+  // Couleur unique des LED, changeable depuis le backoffice (setColor) : le tableau est modifié sur place.
+  var WHITE = [255, 255, 255];
+  var COLORS = { eye: WHITE, brow: WHITE, mouth: WHITE };
+
+  // Images plein écran (boutons pierre / feuille / ciseaux du backoffice), '#' = LED allumée.
+  // Glyphes ✊ ✋ ✌ (U+270A à U+270C) de GNU Unifont 16.0.04 (unifoundry.com, licence SIL OFL 1.1 / GPL
+  // avec exception pour les polices) : un même jeu de dessins 16x16, au lieu de dessins faits main.
+  var ICONS = {
+    pierre: [
+      '................',
+      '................',
+      '................',
+      '................',
+      '......##.##.....',
+      '....##..#..#....',
+      '...#.#..#..#....',
+      '..##.#.######...',
+      '.#.#.#.#.....#..',
+      '.#.#.#..###..#..',
+      '.#.#.#..##...#..',
+      '..##.###.....#..',
+      '..#.#.......#...',
+      '...#.......#....',
+      '....#######.....',
+      '................'
+    ],
+    feuille: [
+      '................',
+      '....#.#.#.......',
+      '...#.#.#.#......',
+      '...#.#.#.#......',
+      '..##.#.#.#......',
+      '.#.#.#.#.#......',
+      '.#.#.#.#.#..##..',
+      '.#.#.#.#.#.#..#.',
+      '.#........#...#.',
+      '.#...........#..',
+      '.#..........#...',
+      '..#........#....',
+      '...#.......#....',
+      '....#######.....',
+      '................',
+      '................'
+    ],
+    ciseaux: [
+      '...##.....##....',
+      '..#..#...#..#...',
+      '..#...#.#...#...',
+      '...#..#.#..#....',
+      '...#...#...#....',
+      '....#..#..#.....',
+      '....#.....#.....',
+      '.#####..######..',
+      '#..#..#.#.....#.',
+      '#..#..#..###..#.',
+      '#..#..#...#...#.',
+      '#..#..#..#....#.',
+      '.#####.......#..',
+      '..#.........#...',
+      '...#########....',
+      '................'
+    ],
+    // Blagues (2026-10-31) : texte en chiffres de 3x7 pixels faits main.
+    prix: [
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '###...##.#.#.###',
+      '..#..#...#.#.#.#',
+      '..#.####.#.#.#.#',
+      '###..#...###.#.#',
+      '#...####...#.#.#',
+      '#....#.....#.#.#',
+      '###...##...#.###',
+      '................',
+      '................',
+      '................',
+      '................'
+    ]
+  };
+
+  // Image RGB (même format que render) d'une des ICONS ; null si le nom est inconnu.
+  function icon(name) {
+    var rows = ICONS.hasOwnProperty(name) ? ICONS[name] : null;
+    if (!rows) return null;
+    var img = new Uint8Array(W * W * 3);
+    for (var y = 0; y < W; y++) for (var x = 0; x < W; x++) {
+      if (rows[y].charAt(x) !== '#') continue;
+      img.set(WHITE, (y * W + x) * 3);
+    }
+    return img;
+  }
 
   function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
 
@@ -159,7 +254,10 @@
     var cx = (ob.x0 + ob.x1) / 2, halfW = w / 2;
     var NEUTRAL_W = 8.8;
 
-    var fx = clamp(NEUTRAL_W + (w - NEUTRAL_W) * (1 + 0.5 * A), 3.5, 14.5) / w;
+    // Largeur : étirée x1,5 autour du neutre, mais resserrée bien plus fort (x2,4) : les lèvres réelles ne
+    // rétrécissent que de 20 à 25 % (« OU »), il faut ça pour voir les variations de la bouche étroite (2026-10-31).
+    var gainW = w < NEUTRAL_W ? 1 + 1.4 * A : 1 + 0.5 * A;
+    var fx = clamp(NEUTRAL_W + (w - NEUTRAL_W) * gainW, 3, 14.5) / w;
 
     var minP = lips.outer[0], maxP = lips.outer[0], sumY = 0, i;
     for (i = 0; i < lips.outer.length; i++) {
@@ -190,6 +288,36 @@
       return [x, y];
     }
     return { outer: lips.outer.map(tf), inner: h2 < 0.2 ? [] : lips.inner.map(tf) };
+  }
+
+  // Symétrie légère du contour mesuré : chaque point est rapproché de son reflet UNIQUEMENT quand
+  // l'écart est minuscule (< 0,15 px : bruit de mesure). Toute asymétrie réelle (sourire en coin,
+  // lèvre qui bouge d'un côté) passe intacte, et aucun mouvement n'est lissé ni retardé.
+  // Convention des anneaux (backoffice) : coins aux indices 0 et N/2, reflet du point i = N/2 - i.
+  var SYM_NOISE = 0.15;
+  var SYM_PIX = 0.35;  // rendu : bouche rendue symétrique si ça change au plus 2 pixels ou 35 % de ses pixels (un pixel déplacé compte 2)
+  function symmetrizeNoise(l) {
+    var N = l.outer.length;
+    if (N % 2 || (l.inner.length && l.inner.length !== N)) return l;
+    var cx = (l.outer[0][0] + l.outer[N / 2][0]) / 2;
+    function ring(r) {
+      return r.map(function (p, i) {
+        var m = r[(N / 2 - i + N) % N];
+        var mx = 2 * cx - m[0], my = m[1];
+        var d = Math.sqrt(sq(p[0] - mx) + sq(p[1] - my));
+        var k = 0.5 * (1 - smooth(SYM_NOISE * 0.5, SYM_NOISE, d));     // 0,5 = moyenne exacte ; 0 = intact
+        return [p[0] + (mx - p[0]) * k, p[1] + (my - p[1]) * k];
+      });
+    }
+    return { outer: ring(l.outer), inner: l.inner.length ? ring(l.inner) : [] };
+  }
+
+  // Cale l'axe de la bouche sur la grille de LED (décalage < 0,25 px) : une forme symétrique
+  // donne alors des pixels symétriques.
+  function snapAxis(l) {
+    var b = bbox(l.outer), cx = (b.x0 + b.x1) / 2, d = Math.round(cx * 2) / 2 - cx;
+    function sh(p) { return [p[0] + d, p[1]]; }
+    return { outer: l.outer.map(sh), inner: l.inner.map(sh) };
   }
 
   // --- Rendu --------------------------------------------------------------------------------
@@ -228,62 +356,79 @@
       }
     }
 
-    // --- Yeux : deux blocs simples, très mobiles et très expressifs -----------------------
-    //  - le regard les fait glisser de ±2 px, s'étirer vers le haut et s'écraser vers le bas ;
-    //  - sourcils baissés vers l'intérieur (colère) : le coin intérieur du haut est coupé ;
-    //  - sourcils relevés vers l'intérieur (tristesse) : le coin extérieur du haut est coupé ;
-    //  - joues qui remontent (sourire sincère) : le bas de l'œil se relève en croissant ;
-    //  - yeux écarquillés : plus grands ; paupières : écrasent l'œil jusqu'au trait.
-    var EYE_W = 4, EYE_H = 3;
-    var eyeBuf = layer(), browBuf = layer();
-    function eye(xBase, blink, squint, tilt, innerOnRight) {
-      var w = EYE_W + Math.abs(s.lookX) * 0.8 + s.wide * 0.6;
-      var hOpen = EYE_H - s.lookY * 0.75 + s.wide * 0.9;
-      var h = Math.max(0.7, hOpen * (1 - blink));
-      var cx = xBase + EYE_W / 2 + s.lookX * 2.2;
-      var cy = 5.5 + s.lookY * 2;
-      var xl = cx - w / 2, y0 = cy - h / 2, y1 = cy + h / 2;
-      var open = 1 - blink;
-      var tops = {};                                                   // haut de l'œil par colonne (pour les sourcils)
-      for (var x = Math.floor(xl); x < Math.ceil(xl + w); x++) {
-        if (overlap(x, x + 1, xl, xl + w) < 0.5) continue;             // pas de demi-colonne : tout ou rien
-        var tt = clamp((x + 0.5 - xl) / w, 0, 1);
-        var tin = innerOnRight ? tt : 1 - tt;                          // 0 = extérieur, 1 = intérieur
-        var cut = tilt < 0 ? -tilt * 1.4 * tin : tilt * 1.1 * (1 - tin);
-        var arch = squint * 1.6 * (1 - Math.abs(tt - 0.5) * 2);        // yeux plissés : croissant « ∩ »
-        var top = y0 + cut * open - arch * open;
-        var bot = Math.max(top + 0.35, y1 - arch * open - squint * 0.6 * open);
-        tops[x] = top;
-        for (var y = Math.floor(top); y < Math.ceil(bot); y++) add(eyeBuf, x, y, overlap(y, y + 1, top, bot));
+    // --- Yeux : triangles de citrouille MÉCHANTE ---------------------------------------
+    // Triangles rectangles « ◣ ◢ » : coin extérieur haut, pente qui plonge vers le nez = regard mauvais.
+    // Forme fixe : les yeux bougent (regard) et se ferment, mais ne changent pas de forme avec
+    // l'humeur. Ce sont les SOURCILS qui portent les émotions.
+    //  - regard : le triangle glisse d'un bloc, aligné sur la grille de LED ;
+    //  - clignement : la paupière efface le triangle par le haut, puis il ne reste
+    //    qu'une petite barre horizontale.
+    var EYE = ['##...', '####.', '#####'];                             // œil gauche ; l'œil droit en est le reflet
+    var EYE_W = 5, EYE_H = 3, EYE_TOP = 4, BAR = 3;
+    var eyeMask = new Uint8Array(W * W);
+    function eye(xBase, blink, mirror) {
+      var xl = xBase + Math.round(s.lookX * 2);
+      var top = EYE_TOP + Math.round(s.lookY * 1.2);
+      var hidden = blink >= 0.85 ? EYE_H : Math.floor(blink / 0.85 * EYE_H); // rangées effacées par la paupière
+      for (var r = 0; r < EYE_H; r++) {
+        for (var c = 0; c < EYE_W; c++) {
+          var on = r < hidden ? false : EYE[r][mirror ? EYE_W - 1 - c : c] === '#';
+          if (blink >= 0.85) on = r === EYE_H - 1 && Math.abs(c - (EYE_W - 1) / 2) <= (BAR - 1) / 2;
+          var x = xl + c, y = top + r;
+          if (on && x >= 0 && x < W && y >= 0 && y < W) eyeMask[y * W + x] = 1;
+        }
       }
-      return { xl: xl, y0: y0, tops: tops };
+      // Le sourcil se place par rapport à l'œil OUVERT : il ne bouge pas quand la paupière se ferme.
+      var openTop = [];
+      for (c = 0; c < EYE_W; c++) {
+        for (r = 0; r < EYE_H && EYE[r][mirror ? EYE_W - 1 - c : c] !== '#'; r++);
+        openTop.push(top + r);
+      }
+      return { xl: xl, top: top, openTop: openTop };
     }
-    var eL = eye(2, s.blinkL, s.squintL, s.tiltL, true);
-    var eR = eye(10, s.blinkR, s.squintR, s.tiltR, false);
+    var eL = eye(2, s.blinkL, false);
+    var eR = eye(9, s.blinkR, true);
+    put(eyeMask, COLORS.eye);
 
-    // Sourcils : barre de 4 px posée sur la paupière, colonne par colonne. Hauteur et inclinaison
-    // indépendantes ; ils ne recouvrent jamais l'œil.
+    // --- Sourcils : toute l'émotion passe par eux -----------------------------------------
+    // Au repos, ils sont froncés vers le nez (EVIL) : la citrouille a l'air mauvaise même sans rien faire.
+    // Un trait d'un pixel, de la largeur de l'œil :
+    //  - hauteur : levé (surprise, joie) ou baissé (concentration, méfiance) ;
+    //  - inclinaison : bout intérieur bas = colère « \ / », bout intérieur haut = tristesse « / \ » ;
+    //  - sourcil levé et droit : il s'arrondit en arc ; yeux écarquillés : il monte encore.
+    // Il épouse la pente du triangle et reste toujours séparé de l'œil par une LED éteinte (sinon il se confond avec lui).
+    // Course (2026-10-31, l'opérateur trouvait le suivi trop faible) : levé jusqu'à 2 rangées (3 écarquillé),
+    // pente de -2 à +2 ; baissé, il n'a pas la place de descendre : il fronce davantage. Un petit mouvement
+    // suffit à bouger d'un pixel.
+    var browMask = new Uint8Array(W * W);
+    var EVIL = 1;                                                      // pente de repos (froncé), en rangées
     function brow(e, v, tilt, innerOnRight) {
-      var col0 = Math.round(e.xl);
-      for (var i = 0; i < 4; i++) {
-        var tin = innerOnRight ? i / 3 : 1 - i / 3;
-        var top = e.tops[col0 + i] !== undefined ? e.tops[col0 + i] : e.y0;
-        var gap = v >= 0 ? 1.8 + v * 2.2 : 1.8 + v * 0.9;
-        var y = top - gap - tilt * 1.0 * tin;                          // intérieur plus haut (triste) ou plus bas (colère)
-        if (tilt > 0) y += tilt * 0.9 * (1 - tin);                     // extérieur qui tombe
-        y = Math.max(0, Math.min(y, top - 1));
-        var f = Math.floor(y);
-        add(browBuf, col0 + i, f, 1 - (y - f));
-        add(browBuf, col0 + i, f + 1, y - f);
+      v = clamp(v + s.wide * 0.6, -1.3, 1.5);
+      // Pente en nombre entier de rangées, tracée par paliers réguliers (pixel art) :
+      // D > 0 : bout intérieur plus bas (méchant, colère) ; D < 0 : bout intérieur plus haut (tristesse).
+      var D = clamp(Math.round(EVIL - tilt * 2 - Math.min(0, v) * 1.5), -2, 2);
+      var lift = v > 0 ? Math.round(v * 2) : 0;                        // 0, 1, 2 (3 avec les yeux écarquillés)
+      var outerRow = e.top - 2 - lift;
+      if (D < 0) outerRow -= D;                                        // tristesse : l'extérieur tombe
+      var arc = D === 0 && v > 0.5;                                    // sourcil levé et droit : arc
+      var ys = [], lift2 = 0, i;
+      for (i = 0; i < EYE_W; i++) {
+        var j = innerOnRight ? i : EYE_W - 1 - i;                      // 0 = extérieur .. 4 = intérieur
+        var step = Math.floor(j * (Math.abs(D) + 1) / EYE_W);         // 0,0,0,1,1 ou 0,0,1,1,2
+        ys.push(outerRow + (D >= 0 ? step : -step) + (arc && (j === 0 || j === EYE_W - 1) ? 1 : 0));
+        lift2 = Math.max(lift2, ys[i] - (e.openTop[i] - 2));       // trop près de l'œil : on remonte tout le sourcil
+      }
+      for (i = 0; i < EYE_W; i++) {
+        var col = e.xl + i, row = Math.max(0, ys[i] - lift2);
+        if (col >= 0 && col < W && row < e.openTop[i]) browMask[row * W + col] = 1;
       }
     }
     brow(eL, s.browL, s.tiltL, true);
     brow(eR, s.browR, s.tiltR, false);
-    put(binarize(eyeBuf, 0.25), COLORS.eye);
-    put(binarize(browBuf, 0.25), COLORS.brow);
+    put(browMask, COLORS.brow);
 
     // --- Bouche : contour vide d'un pixel, un seul ton ---------------------------------------
-    var lips = accentuate(s.lips || lipsFromParams(s));
+    var lips = snapAxis(accentuate(s.lips ? symmetrizeNoise(s.lips) : lipsFromParams(s)));
     var ob = bbox(lips.outer);
     var cov = layer(), SS = 4;
     for (var py = Math.max(0, Math.floor(ob.y0)); py <= Math.min(W - 1, Math.floor(ob.y1)); py++) {
@@ -297,31 +442,67 @@
         cov[py * W + pxl] = n / (SS * SS);
       }
     }
-    var mouth;
-    if (lips.inner.length < 3) {
-      // Fermée : un trait d'une LED d'épaisseur.
-      mouth = new Uint8Array(W * W);
-      for (var cx0 = 0; cx0 < W; cx0++) {
-        var by = -1, bv = 0.15;
-        for (var cy0 = 0; cy0 < W; cy0++) if (cov[cy0 * W + cx0] > bv) { bv = cov[cy0 * W + cx0]; by = cy0; }
-        if (by >= 0) mouth[by * W + cx0] = 1;
-      }
-    } else {
-      // Ouverte : on ne garde que le bord de la forme, l'intérieur reste éteint.
-      var fill = binarize(cov, 0.15);
-      mouth = new Uint8Array(W * W);
-      for (var my = 0; my < W; my++) {
-        for (var mx = 0; mx < W; mx++) {
-          if (!fill[my * W + mx]) continue;
-          var edge = mx === 0 || mx === W - 1 || my === 0 || my === W - 1 ||
-            !fill[my * W + mx - 1] || !fill[my * W + mx + 1] || !fill[(my - 1) * W + mx] || !fill[(my + 1) * W + mx];
-          if (edge) mouth[my * W + mx] = 1;
+    var closed = lips.inner.length < 3;
+    function mouthMask(c) {
+      var m = new Uint8Array(W * W), x, y;
+      if (closed) {
+        // Fermée : un trait d'une LED d'épaisseur.
+        var rows = [];
+        for (x = 0; x < W; x++) {
+          var by = -1, bv = 0.15;
+          for (y = 0; y < W; y++) if (c[y * W + x] > bv) { bv = c[y * W + x]; by = y; }
+          rows.push(by);
+        }
+        // Pixel isolé d'une rangée au-dessus ou en dessous de ses deux voisins (alignés) : recalé sur eux.
+        for (x = 1; x < W - 1; x++) {
+          var l = rows[x - 1], r = rows[x + 1];
+          if (l >= 0 && l === r && rows[x] >= 0 && Math.abs(rows[x] - l) === 1) rows[x] = l;
+        }
+        for (x = 0; x < W; x++) if (rows[x] >= 0) m[rows[x] * W + x] = 1;
+      } else {
+        // Ouverte : on ne garde que le bord de la forme, l'intérieur reste éteint.
+        var fill = binarize(c, 0.15);
+        for (y = 0; y < W; y++) {
+          for (x = 0; x < W; x++) {
+            if (!fill[y * W + x]) continue;
+            var edge = x === 0 || x === W - 1 || y === 0 || y === W - 1 ||
+              !fill[y * W + x - 1] || !fill[y * W + x + 1] || !fill[(y - 1) * W + x] || !fill[(y + 1) * W + x];
+            if (edge) m[y * W + x] = 1;
+          }
         }
       }
+      return m;
     }
+    var mouth = mouthMask(cov);
+    // Presque symétrique au pixel près (ouverte ou fermée) : on la rend symétrique, c'est plus propre.
+    // Couverture moyennée avec son reflet par rapport à l'axe (calé sur la grille par snapAxis), puis
+    // on garde cette version si elle change peu de pixels (SYM_PIX) : une vraie asymétrie
+    // (sourire en coin franc, bouche de côté) reste intacte.
+    var M = Math.round(ob.x0 + ob.x1);                                 // reflet de la colonne x : M - 1 - x
+    var covS = layer();
+    for (var sy = 0; sy < W; sy++) {
+      for (var sx = 0; sx < W; sx++) {
+        var mxr = M - 1 - sx, v = cov[sy * W + sx];
+        covS[sy * W + sx] = mxr >= 0 && mxr < W ? (v + cov[sy * W + mxr]) / 2 : v;
+      }
+    }
+    var sym = mouthMask(covS), diff = 0, on = 0;
+    for (var si = 0; si < W * W; si++) { diff += mouth[si] !== sym[si]; on += mouth[si]; }
+    if (diff <= Math.max(2, on * SYM_PIX)) mouth = sym;
     put(mouth, COLORS.mouth);
+
     return px;
   }
+
+  // Bouche en demi-lune du mode sommeil : bord haut plat de x = 2,5 à 13,5, arc de 4 de profondeur,
+  // centrée sur l'axe du visage (x = 8, entre les colonnes 7 et 8). Coins aux indices 0 et N.
+  var MOON = (function () {
+    var cx = 8, y0 = 9.5, rx = 5.5, ry = 4, N = 12, outer = [], k;
+    for (k = 0; k <= N; k++) outer.push([cx + (-1 + 2 * k / N) * rx, y0]);
+    for (k = 1; k < N; k++) outer.push([cx + rx * Math.cos(Math.PI * k / N), y0 + ry * Math.sin(Math.PI * k / N)]);
+    var inner = outer.map(function (p) { return [cx + (p[0] - cx) * 0.6, y0 + 0.4 + (p[1] - y0) * 0.5]; });
+    return { outer: outer, inner: inner };
+  })();
 
   // --- Animateur : donne vie à l'état cible (ressorts pour les yeux, clignements, veille) ---
   // step(cible, maintenantMs) renvoie l'état à afficher. À appeler ~30-40 fois par seconde.
@@ -330,7 +511,6 @@
     var V = { lookX: 0, lookY: 0, browL: 0, browR: 0, tiltL: 0, tiltR: 0 }; // vitesses des ressorts
     var last = null;
     var blinkStart = -1, nextBlink = 0, doubleBlink = false;
-    var idleNext = 0, idleTarget = normalize({});
     var Dl = null; // contour des lèvres affiché (suit le contour cible, quasi sans retard)
 
     function followLips(target, dt) {
@@ -373,25 +553,14 @@
     }
 
     return {
-      // Cible de veille : regard qui saute d'un point à l'autre, humeurs qui passent sur le visage.
-      idleTarget: function (now) {
-        if (now >= idleNext) {
-          idleNext = now + 900 + Math.random() * 2200;
-          var still = Math.random() < 0.25, m = Math.random();
-          var t = {
-            lookX: still ? 0 : Math.random() * 2 - 1,
-            lookY: still ? 0 : Math.random() * 1.4 - 0.7,
-            smile: 0.3
-          };
-          if (m > 0.5 && m <= 0.65) { t.browL = t.browR = 0.9; t.wide = 0.8; }                                   // surpris
-          else if (m > 0.65 && m <= 0.8) { t.browL = t.browR = -0.4; t.tiltL = t.tiltR = -0.9; t.smile = -0.5; } // fâché
-          else if (m > 0.8 && m <= 0.9) { t.tiltL = t.tiltR = 0.9; t.browL = t.browR = 0.2; t.smile = -0.4; }    // triste
-          else if (m > 0.9) { t.squintL = t.squintR = 0.8; t.smile = 0.9; }                                       // content
-          idleTarget = normalize(t);
-        }
-        return idleTarget;
+      // Sommeil : tête classique de citrouille, immobile. Yeux ouverts, sourcils froncés (froncement
+      // de repos EVIL) et bouche en demi-lune (haut plat, de la largeur des yeux, 4 rangées).
+      // (Avant le 2026-10-30, la veille montrait une citrouille endormie, yeux fermés.)
+      idleTarget: function () {
+        return normalize({ lips: MOON });
       },
-      step: function (target, now) {
+      // opts.autoBlink = false : pas de clignement automatique (mode manuel, on suit le comédien).
+      step: function (target, now, opts) {
         var T = normalize(target);
         var dt = last === null ? 0.033 : clamp((now - last) / 1000, 0.001, 0.1);
         last = now;
@@ -400,7 +569,7 @@
         follow('mouthX', T.mouthX, 0.05, dt);
         follow('smile', T.smile, 0.05, dt);
         follow('skew', T.skew, 0.05, dt);
-        var ab = autoBlink(now);
+        var ab = opts && opts.autoBlink === false ? 0 : autoBlink(now);
         follow('blinkL', Math.max(T.blinkL, ab), 0.025, dt);
         follow('blinkR', Math.max(T.blinkR, ab), 0.025, dt);
         follow('squintL', T.squintL, 0.04, dt);
@@ -424,6 +593,13 @@
   return {
     W: W, DEFAULT_STATE: DEFAULT_STATE, RANGES: RANGES,
     normalize: normalize, lerpState: lerpState, render: render, createAnimator: createAnimator,
-    setAccent: function (v) { ACCENT = v; }
+    ICONS: ICONS, icon: icon,
+    setAccent: function (v) { ACCENT = v; },
+    // Couleur de toutes les LED allumées (visage et images), [r, g, b] de 0 à 255.
+    setColor: function (c) {
+      if (!c || c.length !== 3) return;
+      for (var i = 0; i < 3; i++) WHITE[i] = clamp(Math.round(+c[i] || 0), 0, 255);
+    },
+    getColor: function () { return WHITE.slice(); }
   };
 });

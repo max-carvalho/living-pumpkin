@@ -1,0 +1,3 @@
+musique.wav : « Ghoulish Fun » (version en boucle), Eric Matyas, www.soundimage.org
+Licence CC-BY 3.0 (https://creativecommons.org/licenses/by/3.0/) : citer l'auteur.
+Converti en mono 16 bits 44,1 kHz depuis ghoulish_fun_looping.ogg (2026-10-31).

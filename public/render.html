@@ -57,7 +57,8 @@
   connect('render', {
     onStatus: function (ok) { document.getElementById('dot').className = ok ? 'ok' : ''; },
     onMessage: function (msg) {
-      if (msg.type === 'state') view.draw(Face.render(msg.state));
+      if (msg.type === 'info' && msg.color) Face.setColor(msg.color);   // couleur des LED choisie au backoffice
+      if (msg.type === 'state') view.draw(msg.icon ? Face.icon(msg.icon) : msg.mode === 'off' ? new Uint8Array(Face.W * Face.W * 3) : Face.render(msg.state));
     }
   });
 </script>

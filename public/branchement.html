@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Citrouille - branchement de la matrice</title>
+<style>
+  :root { --bg: #0d0907; --card: #1a130e; --line: #3a2a1d; --text: #f3e6d8; --muted: #a8957f; --accent: #ff9a1f; --red: #ff5a4f; --data: #4fc3ff; --gnd: #9a9a9a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
+  h1 { margin: 0; font-size: 22px; color: var(--accent); }
+  h2 { margin: 0 0 8px; font-size: 17px; color: var(--accent); }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+  ol, ul { margin: 0; padding-left: 22px; }
+  li { margin: 6px 0; }
+  .warn { border-color: #7a2a1d; background: #2a120d; }
+  .warn h2 { color: #ff8a6a; }
+  code { background: #2a1e15; padding: 2px 6px; border-radius: 6px; font-size: 15px; word-break: break-all; }
+  .cmd { display: block; padding: 10px; margin: 8px 0; user-select: all; }
+  .svg { overflow-x: auto; }
+  svg { display: block; width: 100%; min-width: 520px; height: auto; }
+  .r { color: var(--red); font-weight: 600; } .d { color: var(--data); font-weight: 600; } .g { color: var(--gnd); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  td, th { border-bottom: 1px solid var(--line); padding: 6px 4px; text-align: left; vertical-align: top; }
+  .muted { color: var(--muted); font-size: 14px; }
+  a { color: #ffb347; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🎃 Brancher la matrice LED</h1>
+  <p class="muted">Matrice WS2812B 16x16. Fais tout <b>Pi éteint et alimentation débranchée</b>.</p>
+
+  <section>
+    <h2>1. Repère les fils de la matrice</h2>
+    <p>Retourne la matrice. Une flèche imprimée montre le sens des données : le connecteur où la flèche <b>commence</b> est l'<b>entrée</b> (marquée <code>DIN</code> ou <code>IN</code>). C'est le seul côté à utiliser.</p>
+    <p>À l'entrée il y a en général :</p>
+    <ul>
+      <li>un connecteur à <b>3 fils</b> : <span class="r">rouge = +5 V</span>, <span class="d">vert ou blanc = DIN (données)</span>, <span class="g">noir ou blanc = GND</span> ;</li>
+      <li>et souvent <b>2 fils libres</b> plus gros (<span class="r">rouge</span> / <span class="g">noir</span>) : c'est l'alimentation.</li>
+    </ul>
+    <p class="muted">Les couleurs changent selon les fabricants : <b>vérifie les inscriptions</b> imprimées à côté des fils (5V, DIN, GND).</p>
+  </section>
+
+  <section>
+    <h2>2. Schéma</h2>
+    <div class="svg">
+    <svg viewBox="0 0 560 300" role="img" aria-label="Schéma de câblage">
+      <style>
+        text { font: 13px system-ui, sans-serif; fill: #f3e6d8; }
+        .lbl { font-size: 12px; fill: #a8957f; }
+        .box { fill: #231a14; stroke: #5a4330; stroke-width: 2; rx: 10; }
+      </style>
+      <!-- Pi -->
+      <rect class="box" x="10" y="40" width="150" height="190"/>
+      <text x="30" y="65" style="font-weight:600">Raspberry Pi</text>
+      <circle cx="140" cy="110" r="7" fill="#9a9a9a"/><text x="30" y="114">broche 6 · GND</text>
+      <circle cx="140" cy="180" r="7" fill="#4fc3ff"/><text x="30" y="184">broche 19 · données</text>
+      <!-- Alim -->
+      <rect class="box" x="200" y="230" width="160" height="60"/>
+      <text x="215" y="255" style="font-weight:600">Alimentation 5 V</text>
+      <text class="lbl" x="215" y="275">4 A minimum (pas le Pi !)</text>
+      <!-- Résistance -->
+      <rect x="250" y="172" width="50" height="16" fill="#c8a060" rx="3"/>
+      <text class="lbl" x="250" y="166">330 Ω</text>
+      <!-- Matrice -->
+      <rect class="box" x="400" y="40" width="150" height="190"/>
+      <text x="420" y="65" style="font-weight:600">Matrice (entrée)</text>
+      <circle cx="420" cy="110" r="7" fill="#9a9a9a"/><text x="435" y="114">GND</text>
+      <circle cx="420" cy="145" r="7" fill="#ff5a4f"/><text x="435" y="149">+5 V</text>
+      <circle cx="420" cy="180" r="7" fill="#4fc3ff"/><text x="435" y="184">DIN</text>
+      <!-- Condensateur -->
+      <text class="lbl" x="452" y="215">1000 µF entre +5 V et GND</text>
+      <!-- Fils -->
+      <path d="M147 110 H413" stroke="#9a9a9a" stroke-width="4" fill="none"/>
+      <path d="M147 180 H250 M300 180 H413" stroke="#4fc3ff" stroke-width="4" fill="none"/>
+      <path d="M320 230 V145 H413" stroke="#ff5a4f" stroke-width="4" fill="none"/>
+      <path d="M240 230 V110" stroke="#9a9a9a" stroke-width="4" fill="none"/>
+      <text class="lbl" x="326" y="225">+5 V</text>
+      <text class="lbl" x="205" y="225">GND</text>
+    </svg>
+    </div>
+  </section>
+
+  <section>
+    <h2>3. Les branchements, un par un</h2>
+    <table>
+      <tr><th>Fil</th><th>De</th><th>Vers</th></tr>
+      <tr><td class="r">+5 V</td><td>+ de l'alimentation 5 V</td><td>+5 V de la matrice (gros fil rouge)</td></tr>
+      <tr><td class="g">GND</td><td>– de l'alimentation 5 V</td><td>GND de la matrice (gros fil noir)</td></tr>
+      <tr><td class="g">GND</td><td><b>Broche 6</b> du Pi</td><td>GND de la matrice (masse commune : <b>obligatoire</b>)</td></tr>
+      <tr><td class="d">Données</td><td><b>Broche 19</b> du Pi</td><td>résistance 330 Ω, puis <b>DIN</b> de la matrice</td></tr>
+    </table>
+    <p class="muted">Condensateur 1000 µF : patte « – » (bande) sur GND, l'autre sur +5 V, au plus près de la matrice. Sans résistance ni condensateur, ça marche souvent pour un premier essai ; ajoute-les pour l'installation finale.</p>
+  </section>
+
+  <section>
+    <h2>4. Trouver les broches du Pi</h2>
+    <p>Tiens le Pi avec les <b>ports USB vers le bas</b>. Le connecteur à 40 broches est sur le bord droit. La broche 1 est <b>en haut, dans la rangée intérieure</b> (pastille carrée).</p>
+    <div class="svg">
+    <svg viewBox="0 0 300 190" role="img" aria-label="Broches 1 à 20 du Pi">
+      <style>text { font: 12px system-ui, sans-serif; fill: #a8957f; } .hl { fill: #f3e6d8; font-weight: 600; }</style>
+      <text x="40" y="14">intérieur</text><text x="190" y="14">bord de la carte</text>
+      <g id="pins"></g>
+    </svg>
+    </div>
+    <ul>
+      <li><b>Broche 6</b> = 3<sup>e</sup> broche de la rangée du <b>bord</b>, en partant du haut.</li>
+      <li><b>Broche 19</b> = 10<sup>e</sup> broche de la rangée <b>intérieure</b>, en partant du haut.</li>
+    </ul>
+  </section>
+
+  <section class="warn">
+    <h2>À ne jamais faire</h2>
+    <ul>
+      <li>Alimenter la matrice par le 5 V du Pi : 256 LED peuvent tirer bien plus que ce qu'il supporte.</li>
+      <li>Brancher la sortie (<code>DOUT</code>) au lieu de l'entrée (<code>DIN</code>).</li>
+      <li>Oublier la masse commune (broche 6) : les LED feraient n'importe quoi.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>5. Activer le SPI (une seule fois)</h2>
+    <p>Dans la conversation avec Claude sur le Pi, tape :</p>
+    <code class="cmd">! sudo sh ~/living-pumpkin/scripts/activer-spi.sh</code>
+    <p class="muted">Ça active le SPI, installe le démarrage automatique du serveur, puis redémarre le Pi. Après le redémarrage, relance <code>claude</code> dans le dossier personnel : il sait où on en est.</p>
+  </section>
+
+  <section>
+    <h2>6. Premier allumage</h2>
+    <p>Dans le <a href="/backoffice.html">backoffice</a>, section « Matrice LED », coche <b>Mire de test</b>. Tu dois voir :</p>
+    <ul>
+      <li>tout en blanc : la ligne du haut et la colonne de gauche allumées ;</li>
+      <li>une flèche qui pointe vers le haut.</li>
+    </ul>
+    <p class="muted">Si c'est tourné, en miroir ou en zigzag : décris-le à Claude, il réglera <code>leds.json</code>.</p>
+  </section>
+</main>
+<script>
+  // Dessine les broches 1 à 20 (2 rangées), en surlignant la 6 (GND) et la 19 (données).
+  var g = document.getElementById('pins'), NS = 'http://www.w3.org/2000/svg';
+  for (var n = 1; n <= 20; n++) {
+    var row = Math.ceil(n / 2) - 1, inner = n % 2 === 1;
+    var x = inner ? 110 : 160, y = 30 + row * 16;
+    var c = document.createElementNS(NS, n === 1 ? 'rect' : 'circle');
+    var color = n === 6 ? '#9a9a9a' : n === 19 ? '#4fc3ff' : '#4a3a2c';
+    if (n === 1) { c.setAttribute('x', x - 6); c.setAttribute('y', y - 6); c.setAttribute('width', 12); c.setAttribute('height', 12); }
+    else { c.setAttribute('cx', x); c.setAttribute('cy', y); c.setAttribute('r', n === 6 || n === 19 ? 7 : 5); }
+    c.setAttribute('fill', color);
+    g.appendChild(c);
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', inner ? 80 : 178); t.setAttribute('y', y + 4);
+    t.textContent = n === 6 ? '6 · GND' : n === 19 ? '19 · données' : n;
+    if (n === 6 || n === 19) { t.setAttribute('class', 'hl'); if (inner) t.setAttribute('x', 10); }
+    g.appendChild(t);
+  }
+</script>
+</body>
+</html>
