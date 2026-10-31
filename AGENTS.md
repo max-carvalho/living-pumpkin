@@ -35,6 +35,7 @@ Pour Halloween (31 octobre), une citrouille « vivante » devant la maison : un 
 - Pas de clignement automatique (`step(..., { autoBlink: false })`) : le sommeil est immobile, le mode manuel suit le comédien. Les sourcils sont placés par rapport à l'œil ouvert et figés côté mesure pendant le clignement de leur œil (MediaPipe fait croire à un sourcil qui descend).
 - Synchro labiale : le serveur retarde le visage (cibles horodatées dans `targetQueue`) de `lipsyncMs`, 130 ms par défaut, réglable de 0 à 500 ms dans le backoffice (section « Son »), car le son arrive plus tard que l'image sur la citrouille. S'applique à tout ce qui affiche le visage (aperçu, rendu, future matrice).
 - Mode debug de la voix (case « Debug » de la section « Son ») : la voix sort 2 s plus tard sur le haut-parleur (`DEBUG_DELAY` dans `voice.js`) et le visage est retardé d'autant, pour que l'opérateur parle puis s'écoute. État gardé par le serveur, non mémorisé : repart désactivé au redémarrage.
+- Page d'observation (`public/observation.html`, 2026-10-31, format PC) : tout voir et tout entendre sauf le maître du jeu. Caméra IR (`/cam.mjpg`) + micro de dehors (`/ws?role=audio`), visage de la citrouille (vue LED / citrouille), son réellement joué par l'enceinte (`/ws?role=sortie` : copie du mélange voix + musique de `son.js`, ramenée à 22,05 kHz), vumètres et volume par flux, état (mode, image affichée, couleur, voix branchée / parle, musique, synchro, debug, LED, connectés) et journal des changements. Rôle WebSocket `observe` : reçoit l'état comme un rendu sans compter comme tel ; le serveur renvoie `info` chaque seconde tant qu'une observation est ouverte.
 - Backoffice : écrans en haut de page, sans scroll (webcam du Pi ; dessous, caméra du téléphone + petit aperçu de la citrouille, toucher pour basculer LED/citrouille).
 
 ### Pas encore fait
@@ -92,6 +93,7 @@ shared/face.js       logique du visage (navigateur + Node)
 public/index.html    page d'accueil (liens)
 public/render.html   écran de rendu (matrice simulée) ; matrix.js, net.js
 public/backoffice.html  interface opérateur (téléphone)
+public/observation.html page d'observation (PC) : dehors + citrouille, image, son et état
 scripts/gen-cert.js  génère certs/key.pem et certs/cert.pem (ignorés par git)
 CAHIER_DES_CHARGES.md  spécifications
 ```

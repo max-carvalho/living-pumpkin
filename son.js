@@ -61,6 +61,27 @@ function findDevice() {
 
 let player = null, credits = 0, stopTimer = null;
 
+// Page d'observation : copie du mélange réellement envoyé à l'enceinte, ramenée à 22,05 kHz
+// (moyenne de deux échantillons) pour diviser le débit par deux (~44 Ko/s par auditeur).
+const TAP_RATE = OUT_RATE / 2;
+const TAP_MAX_BUFFERED = 44100;   // ~1 s en attente : client trop lent, on saute
+const listeners = new Set();
+function tap(buf) {
+  if (!listeners.size) return;
+  const src = new Int16Array(buf.buffer, buf.byteOffset, buf.length >> 1);
+  const out = new Int16Array(src.length >> 1);
+  for (let k = 0; k < out.length; k++) out[k] = (src[2 * k] + src[2 * k + 1]) >> 1;
+  const data = Buffer.from(out.buffer);
+  for (const ws of listeners) if (ws.readyState === 1 && ws.bufferedAmount < TAP_MAX_BUFFERED) ws.send(data);
+}
+// Un client WebSocket (rôle « sortie ») qui écoute ce que joue l'enceinte. Rien n'est envoyé
+// quand l'enceinte est muette (aplay arrêté).
+function addListener(ws) {
+  ws.send(JSON.stringify({ type: 'audio', rate: TAP_RATE, format: 's16le' }));
+  listeners.add(ws);
+  ws.on('close', () => listeners.delete(ws));
+}
+
 function start() {
   clearTimeout(stopTimer);
   if (player) return;
@@ -99,7 +120,7 @@ function maybeStop() {
 
 // Envoie des morceaux de 20 ms tant qu'il reste des crédits (rendus un par un par le relais).
 function pump() {
-  while (player && credits > 0) { credits--; player.stdin.write(mix()); }
+  while (player && credits > 0) { credits--; const b = mix(); player.stdin.write(b); tap(b); }
 }
 
 // Prépare le morceau suivant : voix + musique.
@@ -179,6 +200,8 @@ function setMusic(o) {
   saveState();
 }
 function getMusic() { return { on: musicOn, volume: musicVolume }; }
+// État de la sortie pour la page d'observation.
+function getStatus() { return { playing: !!player, voiceUsers, voiceActive: Date.now() / 1000 < duckUntil }; }
 
 process.on('exit', stop);
 
@@ -189,4 +212,4 @@ try {
   if (st.musicOn === true) setMusic({ on: true });
 } catch { /* pas de fichier : musique coupée */ }
 
-module.exports = { voice, voiceUser, setMusic, getMusic, OUT_RATE };
+module.exports = { voice, voiceUser, setMusic, getMusic, getStatus, addListener, OUT_RATE };

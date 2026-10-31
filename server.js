@@ -100,15 +100,19 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 
 function sendAll(msg) {
   const data = JSON.stringify(msg);
-  for (const c of wss.clients) if (c.readyState === 1 && c.role !== 'audio' && c.role !== 'voice') c.send(data);
+  for (const c of wss.clients) if (c.readyState === 1 && c.role !== 'audio' && c.role !== 'voice' && c.role !== 'sortie') c.send(data);
 }
 
 function broadcastState() { sendAll({ type: 'state', state, mode, icon }); }
 
 function broadcastInfo() {
-  let renderers = 0;
-  for (const c of wss.clients) if (c.role === 'render') renderers++;
-  sendAll({ type: 'info', renderers, mode, lipsyncMs, voiceDebug: Voice.getDebug(), music: Son.getMusic(), color: Face.getColor(), ledBrightness: Leds.getBrightness(), ledTest: Leds.getTest() });
+  let renderers = 0, controls = 0, observers = 0;
+  for (const c of wss.clients) {
+    if (c.role === 'render') renderers++;
+    else if (c.role === 'control') controls++;
+    else if (c.role === 'observe') observers++;
+  }
+  sendAll({ type: 'info', renderers, controls, observers, sound: Son.getStatus(), leds: Leds.enabled(), mode, lipsyncMs, voiceDebug: Voice.getDebug(), music: Son.getMusic(), color: Face.getColor(), ledBrightness: Leds.getBrightness(), ledTest: Leds.getTest() });
 }
 
 wss.on('connection', (ws, req) => {
@@ -117,7 +121,10 @@ wss.on('connection', (ws, req) => {
   if (role === 'audio') { ws.role = 'audio'; Audio.add(ws); return; }
   // Rôle « voice » : la voix de l'opérateur part vers le haut-parleur du Pi (voir voice.js).
   if (role === 'voice') { ws.role = 'voice'; Voice.add(ws); return; }
-  ws.role = role === 'control' || role === 'render' ? role : 'render';
+  // Rôle « sortie » : la page d'observation écoute ce que joue l'enceinte (voir son.js).
+  if (role === 'sortie') { ws.role = 'sortie'; Son.addListener(ws); return; }
+  // Rôle « observe » : page d'observation, reçoit l'état comme un écran de rendu sans compter comme tel.
+  ws.role = role === 'control' || role === 'render' || role === 'observe' ? role : 'render';
 
   ws.send(JSON.stringify({ type: 'state', state, mode, icon }));
   broadcastInfo();
@@ -160,6 +167,12 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', broadcastInfo);
 });
+
+// État de la sortie son (voix branchée, parole en cours) : pas d'événement, on le renvoie chaque seconde
+// tant qu'une page d'observation est ouverte.
+setInterval(() => {
+  for (const c of wss.clients) if (c.role === 'observe') { broadcastInfo(); return; }
+}, 1000);
 
 const BLACK = new Uint8Array(Face.W * Face.W * 3);
 // Boucle d'animation : 40 images/s, que le mode soit « veille » ou « live ».

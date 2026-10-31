@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Citrouille - observation</title>
+<style>
+  :root { --bg: #0d0907; --card: #1a130e; --line: #3a2a1d; --text: #f3e6d8; --muted: #a8957f; --accent: #ff9a1f; --ok: #3ddc84; --bad: #b3261e; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0; font-size: 19px; color: var(--accent); }
+  #status { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
+  .dot.ok { background: var(--ok); }
+  #soundAll { margin-left: auto; }
+  /* Grille PC : dehors (grand) | citrouille ; état en colonne de droite. */
+  main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 320px; gap: 12px; padding: 12px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; min-height: 0; gap: 10px; }
+  h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .screen { position: relative; flex: 1; min-height: 0; background: #000; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: grid; place-items: center; }
+  .screen > img, .screen > canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .screen .msg { color: var(--muted); font-size: 13px; }
+  .screen .tag { position: absolute; left: 8px; top: 8px; z-index: 1; font-size: 12px; padding: 2px 10px; border-radius: 999px; background: rgba(0, 0, 0, .65); }
+  .audio { display: grid; grid-template-columns: auto 1fr 120px 42px; align-items: center; gap: 10px; font-size: 14px; }
+  .meter { height: 12px; border-radius: 6px; background: #0a0705; border: 1px solid var(--line); overflow: hidden; }
+  .meter > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #3ddc84 0%, #ffd23f 70%, #ff4b2b 100%); background-size: 300px 100%; }
+  .audio output { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
+  button { font: inherit; color: var(--text); background: #2a1e15; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+  button.on { background: var(--accent); color: #1a0f05; border-color: var(--accent); font-weight: 600; }
+  .small { padding: 3px 10px; font-size: 12px; }
+  #pumpkinView { cursor: pointer; }
+  /* État */
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 14px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .pill { display: inline-block; padding: 1px 10px; border-radius: 999px; background: #2a1e15; border: 1px solid var(--line); }
+  .pill.live { background: var(--accent); color: #1a0f05; border-color: var(--accent); font-weight: 600; }
+  .pill.idle { background: #2c3a6b; border-color: #44559a; }
+  .pill.off { background: #000; }
+  .pill.talk { background: var(--ok); color: #04210f; border-color: var(--ok); font-weight: 600; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; border: 1px solid #0006; }
+  #log { flex: 1; min-height: 60px; overflow: auto; margin: 0; padding: 0; list-style: none; font-size: 13px; border-top: 1px solid var(--line); padding-top: 8px; }
+  #log li { padding: 2px 0; color: var(--muted); }
+  #log li b { color: var(--text); font-weight: 500; }
+  #log time { font-variant-numeric: tabular-nums; margin-right: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎃 Citrouille — observation</h1>
+  <span id="status"><span class="dot" id="dot"></span><span id="statusText">Connexion…</span></span>
+  <button id="soundAll">🔇 Activer le son</button>
+</header>
+
+<main>
+  <!-- Dehors : caméra IR du Pi + micro de la carte son -->
+  <section>
+    <h2>Dehors (caméra et micro de la citrouille)</h2>
+    <div class="screen">
+      <span class="msg" id="camMsg">Connexion à la caméra…</span>
+      <img id="cam" alt="">
+    </div>
+    <div class="audio">
+      <button class="small" id="muteMic">🔇</button>
+      <div class="meter"><i id="vuMic"></i></div>
+      <input type="range" id="volMic" min="0" max="300" value="100">
+      <output id="volMicOut">100 %</output>
+    </div>
+  </section>
+
+  <!-- La citrouille : ce qu'affiche la matrice et ce que joue l'enceinte -->
+  <section>
+    <h2>La citrouille <button class="small" id="viewMode">Vue : citrouille</button></h2>
+    <div class="screen">
+      <canvas id="pumpkinView"></canvas>
+      <span class="tag" id="faceTag"></span>
+    </div>
+    <div class="audio">
+      <button class="small" id="muteOut">🔇</button>
+      <div class="meter"><i id="vuOut"></i></div>
+      <input type="range" id="volOut" min="0" max="300" value="100">
+      <output id="volOutOut">100 %</output>
+    </div>
+  </section>
+
+  <!-- État -->
+  <section>
+    <h2>État</h2>
+    <dl>
+      <dt>Mode</dt><dd><span class="pill" id="sMode">—</span></dd>
+      <dt>Affichage</dt><dd id="sShow">—</dd>
+      <dt>Couleur des LED</dt><dd id="sColor">—</dd>
+      <dt>Voix du maître du jeu</dt><dd id="sVoice">—</dd>
+      <dt>Enceinte</dt><dd id="sSpeaker">—</dd>
+      <dt>Musique</dt><dd id="sMusic">—</dd>
+      <dt>Synchro labiale</dt><dd id="sLipsync">—</dd>
+      <dt>Debug voix</dt><dd id="sDebug">—</dd>
+      <dt>Matrice LED</dt><dd id="sLeds">—</dd>
+      <dt>Connectés</dt><dd id="sClients">—</dd>
+    </dl>
+    <h2>Journal</h2>
+    <ul id="log"></ul>
+  </section>
+</main>
+
+<script src="/shared/face.js"></script>
+<script src="/matrix.js"></script>
+<script src="/net.js"></script>
+<script>
+  var $ = function (id) { return document.getElementById(id); };
+  var wsBase = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws?role=';
+
+  // --- Journal --------------------------------------------------------------------------------
+  function log(text) {
+    var li = document.createElement('li'), t = document.createElement('time');
+    t.textContent = new Date().toLocaleTimeString('fr-FR');
+    li.appendChild(t);
+    var b = document.createElement('b'); b.textContent = text; li.appendChild(b);
+    $('log').insertBefore(li, $('log').firstChild);
+    while ($('log').children.length > 200) $('log').removeChild($('log').lastChild);
+  }
+
+  // --- Caméra IR du Pi ------------------------------------------------------------------------
+  var camTimer = null;
+  function camConnect() {
+    clearTimeout(camTimer);
+    $('cam').hidden = false;
+    $('cam').src = '/cam.mjpg?t=' + Date.now();
+  }
+  $('cam').onerror = function () {
+    if (document.hidden) return;
+    $('cam').hidden = true;
+    $('camMsg').textContent = 'Caméra indisponible, nouvelle tentative…';
+    camTimer = setTimeout(camConnect, 3000);
+  };
+  // Onglet caché : on coupe le flux (le Pi ne capture que s'il y a un spectateur).
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) { clearTimeout(camTimer); $('cam').removeAttribute('src'); } else camConnect();
+  });
+  camConnect();
+
+  // --- Son : deux flux PCM 16 bits par WebSocket ------------------------------------------------
+  // Les flux sont toujours reçus (les vumètres marchent même son coupé) ; le navigateur n'autorise
+  // la lecture qu'après un clic, d'où le bouton « Activer le son ».
+  var ctx = null;
+  function Channel(role, opts) {
+    var ch = { role: role, rate: 16000, playAt: 0, level: 0, muted: false, gain: null, ws: null, vol: 1 };
+    ch.attach = function () {   // appelé une fois le contexte audio créé
+      ch.gain = ctx.createGain();
+      ch.gain.gain.value = ch.muted ? 0 : ch.vol * opts.boost;
+      if (opts.compress) { var c = ctx.createDynamicsCompressor(); ch.gain.connect(c); c.connect(ctx.destination); }
+      else ch.gain.connect(ctx.destination);
+    };
+    ch.update = function () { if (ch.gain) ch.gain.gain.setTargetAtTime(ch.muted ? 0 : ch.vol * opts.boost, ctx.currentTime, 0.02); };
+    function play(data) {
+      var pcm = new Int16Array(data, 0, data.byteLength >> 1), n = pcm.length;
+      if (!n) return;
+      var peak = 0;
+      for (var i = 0; i < n; i++) { var a = Math.abs(pcm[i]); if (a > peak) peak = a; }
+      ch.level = Math.max(ch.level, Math.min(1, peak / 32768 * opts.boost));
+      if (!ctx || ctx.state !== 'running' || ch.muted) { ch.playAt = 0; return; }
+      var now = ctx.currentTime;
+      if (ch.playAt < now + 0.02) ch.playAt = now + 0.1;   // réserve de 100 ms contre les à-coups du Wi-Fi
+      if (ch.playAt > now + 0.5) return;                   // trop de retard accumulé : on saute
+      var buf = ctx.createBuffer(1, n, ch.rate), d = buf.getChannelData(0);
+      for (var j = 0; j < n; j++) d[j] = pcm[j] / 32768;
+      var src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ch.gain);
+      src.start(ch.playAt);
+      ch.playAt += buf.duration;
+    }
+    function open() {
+      var ws = ch.ws = new WebSocket(wsBase + role);
+      ws.binaryType = 'arraybuffer';
+      ws.onmessage = function (e) {
+        if (typeof e.data === 'string') { try { ch.rate = JSON.parse(e.data).rate || ch.rate; } catch (err) { /* ignoré */ } return; }
+        play(e.data);
+      };
+      ws.onclose = function () { setTimeout(open, 1500); };
+    }
+    open();
+    return ch;
+  }
+  // Micro de dehors : faible, donc gain x3 puis compresseur (comme au backoffice).
+  var mic = Channel('audio', { boost: 3, compress: true });
+  // Enceinte : le mélange exact voix + musique joué par le Pi.
+  var out = Channel('sortie', { boost: 1, compress: false });
+
+  function soundButtons() {
+    var on = ctx && ctx.state === 'running';
+    $('soundAll').textContent = on ? '🔊 Son activé' : '🔇 Activer le son';
+    $('soundAll').className = on ? 'on' : '';
+    [[mic, 'muteMic'], [out, 'muteOut']].forEach(function (p) {
+      var audible = on && !p[0].muted;
+      $(p[1]).textContent = audible ? '🔊' : '🔇';
+      $(p[1]).className = 'small' + (audible ? ' on' : '');
+    });
+  }
+  function ensureAudio() {
+    if (!ctx) { ctx = new (window.AudioContext || window.webkitAudioContext)(); mic.attach(); out.attach(); ctx.onstatechange = soundButtons; }
+    return ctx.resume().then(soundButtons);
+  }
+  $('soundAll').onclick = function () {
+    if (ctx && ctx.state === 'running') ctx.suspend().then(soundButtons); else ensureAudio();
+  };
+  function bindChannel(ch, muteId, volId) {
+    $(muteId).onclick = function () {
+      if (!ctx || ctx.state !== 'running') { ch.muted = false; ensureAudio(); ch.update(); return; }
+      ch.muted = !ch.muted; ch.update(); soundButtons();
+    };
+    $(volId).oninput = function () {
+      ch.vol = this.value / 100; ch.update();
+      $(volId + 'Out').textContent = this.value + ' %';
+    };
+  }
+  bindChannel(mic, 'muteMic', 'volMic');
+  bindChannel(out, 'muteOut', 'volOut');
+
+  // Vumètres : crête qui retombe doucement.
+  (function meters() {
+    [[mic, 'vuMic'], [out, 'vuOut']].forEach(function (p) {
+      $(p[1]).style.width = Math.round(Math.sqrt(p[0].level) * 100) + '%';
+      p[0].level *= 0.88;
+    });
+    requestAnimationFrame(meters);
+  })();
+
+  // --- Visage de la citrouille ------------------------------------------------------------------
+  var canvas = $('pumpkinView'), view = MatrixView(canvas);
+  function resize() {
+    var r = canvas.parentNode.getBoundingClientRect();
+    var s = Math.max(16, Math.floor(Math.min(r.width, r.height) * (window.devicePixelRatio || 1)));
+    if (canvas.width !== s) { canvas.width = s; canvas.height = s; view.draw(); }
+  }
+  addEventListener('resize', resize);
+  resize();
+  function setView(m) { view.setMode(m); $('viewMode').textContent = 'Vue : ' + (m === 'pumpkin' ? 'citrouille' : 'LED'); }
+  $('viewMode').onclick = canvas.onclick = function () { setView(view.getMode() === 'led' ? 'pumpkin' : 'led'); };
+  setView('pumpkin');
+
+  var BLACK = new Uint8Array(Face.W * Face.W * 3);
+  var ICON_NAMES = { pierre: 'pierre', feuille: 'feuille', ciseaux: 'ciseaux', prix: '2€40' };
+  var MODE_NAMES = { off: 'Éteint', idle: 'Sommeil', live: 'Manuel' };
+  var COLOR_NAMES = { '255,255,255': 'Blanc', '255,110,0': 'Orange', '255,200,0': 'Jaune', '255,0,0': 'Rouge', '255,40,140': 'Rose', '150,0,255': 'Violet', '0,60,255': 'Bleu', '0,220,255': 'Cyan', '0,255,40': 'Vert' };
+  var lastIcon = null, lastMode = null;
+
+  function showFace(msg) {
+    view.draw(msg.icon ? Face.icon(msg.icon) : msg.mode === 'off' ? BLACK : Face.render(msg.state));
+    var show = msg.icon ? 'Image « ' + (ICON_NAMES[msg.icon] || msg.icon) + ' »' : msg.mode === 'off' ? 'LED éteintes' : msg.mode === 'live' ? 'Visage suivi' : 'Tête de sommeil';
+    $('sShow').textContent = show;
+    $('faceTag').textContent = show;
+    if (msg.icon && msg.icon !== lastIcon) log('Image affichée : ' + (ICON_NAMES[msg.icon] || msg.icon));
+    lastIcon = msg.icon;
+  }
+
+  // --- État (infos du serveur) -------------------------------------------------------------------
+  var prev = {};
+  function changed(key, value, text) {
+    var v = JSON.stringify(value);
+    if (prev[key] !== undefined && prev[key] !== v && text) log(text);
+    prev[key] = v;
+  }
+  function onOff(b) { return b ? 'oui' : 'non'; }
+
+  function showInfo(m) {
+    if (m.color) Face.setColor(m.color);
+    var mode = m.mode;
+    $('sMode').textContent = MODE_NAMES[mode] || mode;
+    $('sMode').className = 'pill ' + mode;
+    changed('mode', mode, 'Mode : ' + (MODE_NAMES[mode] || mode));
+
+    if (m.color) {
+      var key = m.color.join(','), name = COLOR_NAMES[key] || 'rgb(' + key + ')';
+      $('sColor').innerHTML = '';
+      var sw = document.createElement('span'); sw.className = 'swatch'; sw.style.background = 'rgb(' + key + ')';
+      $('sColor').appendChild(sw); $('sColor').appendChild(document.createTextNode(name));
+      changed('color', key, 'Couleur des LED : ' + name);
+    }
+
+    var snd = m.sound || {};
+    $('sVoice').innerHTML = '';
+    var pv = document.createElement('span');
+    pv.className = 'pill' + (snd.voiceActive ? ' talk' : '');
+    pv.textContent = snd.voiceActive ? 'parle' : snd.voiceUsers ? 'micro ouvert' : 'coupée';
+    $('sVoice').appendChild(pv);
+    changed('voice', !!snd.voiceUsers, snd.voiceUsers ? 'Voix du maître du jeu branchée' : 'Voix du maître du jeu coupée');
+    $('sSpeaker').textContent = snd.playing ? 'joue' : 'muette';
+
+    if (m.music) {
+      $('sMusic').textContent = (m.music.on ? 'oui' : 'non') + ' · ' + Math.round(m.music.volume * 100) + ' %';
+      changed('music', m.music.on, 'Musique : ' + onOff(m.music.on));
+    }
+    $('sLipsync').textContent = m.lipsyncMs + ' ms';
+    $('sDebug').textContent = onOff(m.voiceDebug);
+    changed('debug', m.voiceDebug, 'Debug voix : ' + onOff(m.voiceDebug));
+    $('sLeds').textContent = (m.leds === false ? 'désactivée' : Math.round((m.ledBrightness || 0) * 100) + ' %') + (m.ledTest ? ' · mire' : '');
+    changed('ledTest', !!m.ledTest, 'Mire de test : ' + onOff(m.ledTest));
+    var parts = [];
+    parts.push((m.controls || 0) + ' backoffice');
+    parts.push((m.renderers || 0) + ' rendu');
+    parts.push((m.observers || 0) + ' obs.');
+    $('sClients').textContent = parts.join(' · ');
+    changed('controls', m.controls || 0, m.controls ? 'Backoffice connecté (' + m.controls + ')' : 'Plus aucun backoffice connecté');
+  }
+
+  connect('observe', {
+    onStatus: function (ok) {
+      $('dot').className = 'dot' + (ok ? ' ok' : '');
+      $('statusText').textContent = ok ? 'Connecté au Pi' : 'Déconnecté, nouvelle tentative…';
+      log(ok ? 'Connecté au serveur' : 'Connexion au serveur perdue');
+    },
+    onMessage: function (msg) {
+      if (msg.type === 'info') showInfo(msg);
+      else if (msg.type === 'state') showFace(msg);
+    }
+  });
+</script>
+</body>
+</html>
